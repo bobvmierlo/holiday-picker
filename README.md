@@ -1,14 +1,19 @@
 # 🌍 Wheel of Wander — holiday picker for two
 
 A tiny webapp that helps couples pick their next holiday destination with a
-wheel-of-fortune spin. No build step, no dependencies — just open
-`index.html` in a browser (or host it on any static host, e.g. GitHub Pages).
+wheel-of-fortune spin. A small Flask server stores the shared data; the
+frontend is plain HTML/CSS/JS with no build step.
 
 ## Features
 
-- **Spin the wheel** 🎡 — the homepage shows a wheel filled with every
-  destination that matches your current preferences.
-- **Trip preferences** that filter what lands on the wheel:
+- **Two wheels** 🌍🏙️ — tabs switch between *Holidays* (whole countries)
+  and *City trips* (cities in and around Europe), each with its own
+  destination list and history.
+- **Spin the wheel** 🎡 — filled with every destination that matches your
+  current preferences.
+- **Trip preferences** that filter what lands on the wheel — every group
+  is multi-select (pick e.g. both *low* and *mid* budget; *Any* clears
+  the group):
   - 💶 **Budget**: low / mid / high
   - ✈️ **Distance**: regional (car/train), Europe, or long-haul
   - 👥 **Travel party**: just the two of you, or with friends & family
@@ -17,25 +22,26 @@ wheel-of-fortune spin. No build step, no dependencies — just open
     their best months)
 - **Favourites** ⭐ — star the destinations you love (in the manage panel)
   and they get a double-width segment on the wheel: twice the chance to win.
-- **Manage the destination list** ⚙️ — untick built-in countries to keep
-  them off the wheel, or add your own destinations with full tagging.
+- **Manage the destination list** ⚙️ — untick destinations to keep them
+  off the wheel, ✏️ edit any destination's name and tags, delete them, or
+  add your own.
 - **Veto & respin** 🙅 — each partner gets one veto per round, so a single
   unlucky spin doesn't end the discussion.
 - **Spin history** 📖 — accepted destinations are saved so you can look
   back at past picks.
 
-Preferences, custom destinations and history are stored in the browser's
-`localStorage` — nothing leaves your machine.
+**Storage**: destinations and history are stored on the server in
+`data/db.json` (seeded from `seed-destinations.json` and
+`seed-citytrips.json` on first run), so everyone on your network sees the
+same wheels. Only your personal filter selections stay in the browser.
 
 ## Running locally
 
 ```bash
-# any static file server works, for example:
-python3 -m http.server 8000
+pip install -r requirements.txt   # or: apt install python3-flask
+python3 server.py
 # then open http://localhost:8000
 ```
-
-Or simply double-click `index.html`.
 
 ## Deploying to a Linux server
 
@@ -84,15 +90,20 @@ cd /opt/holiday-picker && sudo git pull && sudo systemctl restart holiday-picker
 **Changing the port**: edit the last line of `server.py`, then
 `sudo systemctl restart holiday-picker`.
 
-Since the app stores everything in the browser's `localStorage` and the
-server only hands out static files, plain HTTP on a home network is fine —
-there's nothing sensitive in transit.
+The service stores destinations and history in
+`/var/lib/holiday-picker/db.json` (via systemd's `StateDirectory`), so
+your data survives updates and restarts. Note there is no authentication —
+run it on your home network, not the open internet.
 
 ## Customising
 
-- The built-in destination catalogue lives in [`data.js`](data.js); the
-  tags (`budget`, `distance`, `vibes`, `seasons`, `party`) are documented
-  at the top of that file. "Regional" is meant as reachable by car or
-  train — adjust to wherever home is for you.
-- Colors and styling live in [`styles.css`](styles.css).
-- All app logic is in [`app.js`](app.js).
+- The starting catalogues live in
+  [`seed-destinations.json`](seed-destinations.json) (holidays) and
+  [`seed-citytrips.json`](seed-citytrips.json) (city trips) — used only
+  on first run to create `data/db.json`; after that, edit destinations in
+  the app itself (⚙️ Manage destinations). "Regional" is meant as
+  reachable by car or train — adjust to wherever home is for you.
+- The tag vocabulary (`budget`, `distance`, `vibes`, `seasons`, `party`)
+  is defined at the top of [`server.py`](server.py).
+- Colors and styling live in [`styles.css`](styles.css); all frontend
+  logic is in [`app.js`](app.js).

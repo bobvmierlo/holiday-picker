@@ -16,5 +16,8 @@ __pycache__/
 venv/
 .venv/
 
+# Server-side app data (destinations & history live here at runtime)
+data/
+
 # Local scratch
 *.log

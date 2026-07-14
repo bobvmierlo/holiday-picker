@@ -19,6 +19,11 @@ ExecStart=/usr/bin/python3 /opt/holiday-picker/server.py
 Restart=on-failure
 RestartSec=3
 
+# Destinations & history are stored here (systemd creates the directory
+# at /var/lib/holiday-picker and keeps it writable despite the sandboxing)
+StateDirectory=holiday-picker
+Environment=HOLIDAY_DATA_DIR=/var/lib/holiday-picker
+
 # Run as an unprivileged throwaway user with a read-only view of the system
 DynamicUser=yes
 ProtectSystem=strict
