@@ -1,14 +1,16 @@
-/* Wheel of Wander — couples' holiday destination picker. */
+/* Wheel of Wander — couples' holiday destination picker.
+ *
+ * Destinations and spin history are stored on the server (see server.py);
+ * only your personal filter selections stay in this browser.
+ */
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'wheel-of-wander-v1';
-
   const VIBE_LABELS = { nature: '🌲 nature', culture: '🏛️ culture & museums', food: '🍽️ food', winter: '⛷️ snow' };
-  const VIBE_MIGRATION = { beach: 'nature', city: 'culture' }; // pre-favourites tag names
-  const FAVORITE_WEIGHT = 2; // favourites get a double-width wheel segment
   const BUDGET_LABELS = { low: '💶 low budget', mid: '💶💶 mid budget', high: '💶💶💶 high budget' };
   const DISTANCE_LABELS = { regional: '🚗 regional', europe: '✈️ Europe', longhaul: '🌏 long-haul' };
+  const FAVORITE_WEIGHT = 2; // favourites get a double-width wheel segment
+  const MULTI_FILTERS = ['budget', 'distance', 'vibe', 'season']; // 'party' stays single-choice
 
   const SEGMENT_COLORS = [
     '#ff5e7e', '#ffb84d', '#4dabff', '#6ee7a8',
@@ -17,66 +19,83 @@
   ];
 
   // ── State ─────────────────────────────────────────────────────────
+  let wheelId = location.hash === '#citytrips' ? 'citytrips' : 'holidays';
+
   const state = {
-    filters: { budget: 'any', distance: 'any', party: 'couple', vibe: 'any', season: 'any' },
-    customDestinations: [],
-    disabledIds: [],
-    favoriteIds: BUILTIN_DESTINATIONS.filter((d) => d.favorite).map((d) => d.id),
+    filters: defaultFilters(),
+    destinations: [],
     history: [],
-    // Round state (not persisted): each partner gets one veto per round.
+    // Round state: each partner gets one veto per round.
     vetoedIds: [],
     vetoesLeft: 2,
+    editingId: null,
   };
 
-  function loadState() {
+  function defaultFilters() {
+    return { budget: [], distance: [], party: 'couple', vibe: [], season: [] };
+  }
+
+  function filtersKey() {
+    return `wheel-of-wander-filters-v2-${wheelId}`;
+  }
+
+  function loadFilters() {
+    state.filters = defaultFilters();
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw);
-      if (saved.filters) Object.assign(state.filters, saved.filters);
-      if (Array.isArray(saved.customDestinations)) state.customDestinations = saved.customDestinations;
-      if (Array.isArray(saved.disabledIds)) state.disabledIds = saved.disabledIds;
-      if (Array.isArray(saved.favoriteIds)) state.favoriteIds = saved.favoriteIds;
-      if (Array.isArray(saved.history)) state.history = saved.history;
-      // Migrate state saved before the vibe taxonomy changed
-      if (!(state.filters.vibe in VIBE_LABELS) && state.filters.vibe !== 'any') state.filters.vibe = 'any';
-      for (const d of state.customDestinations) {
-        d.vibes = [...new Set(d.vibes.map((v) => VIBE_MIGRATION[v] || v))];
+      const saved = JSON.parse(localStorage.getItem(filtersKey()) || '{}');
+      for (const key of MULTI_FILTERS) {
+        if (Array.isArray(saved[key])) state.filters[key] = saved[key];
       }
-    } catch (err) {
-      console.warn('Could not load saved state:', err);
-    }
+      if (saved.party === 'couple' || saved.party === 'group') state.filters.party = saved.party;
+    } catch { /* corrupted storage — keep defaults */ }
   }
 
-  function saveState() {
-    const { filters, customDestinations, disabledIds, favoriteIds, history } = state;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ filters, customDestinations, disabledIds, favoriteIds, history }));
-  }
-
-  function isFavorite(d) {
-    return state.favoriteIds.includes(d.id);
-  }
-
-  function allDestinations() {
-    return BUILTIN_DESTINATIONS.concat(state.customDestinations);
-  }
-
-  function eligibleDestinations() {
-    const f = state.filters;
-    return allDestinations().filter((d) =>
-      !state.disabledIds.includes(d.id) &&
-      !state.vetoedIds.includes(d.id) &&
-      (f.budget === 'any' || d.budget === f.budget) &&
-      (f.distance === 'any' || d.distance === f.distance) &&
-      d.party.includes(f.party) &&
-      (f.vibe === 'any' || d.vibes.includes(f.vibe)) &&
-      (f.season === 'any' || d.seasons.includes(f.season))
-    );
+  function saveFilters() {
+    localStorage.setItem(filtersKey(), JSON.stringify(state.filters));
   }
 
   function startNewRound() {
     state.vetoedIds = [];
     state.vetoesLeft = 2;
+  }
+
+  // ── Server API ────────────────────────────────────────────────────
+  async function api(path, options = {}) {
+    const res = await fetch(`/api/wheels/${wheelId}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+    });
+    if (!res.ok) throw new Error(`Server said ${res.status} for ${path}`);
+    return res.status === 204 ? null : res.json();
+  }
+
+  async function loadWheelData() {
+    try {
+      const [destinations, history] = await Promise.all([api('/destinations'), api('/history')]);
+      state.destinations = destinations;
+      state.history = history;
+      wheelHint.textContent = '';
+    } catch (err) {
+      console.error(err);
+      state.destinations = [];
+      state.history = [];
+      wheelHint.textContent = '⚠️ Cannot reach the server — is it running? (python3 server.py)';
+    }
+    renderHistory();
+    refresh();
+  }
+
+  function eligibleDestinations() {
+    const f = state.filters;
+    return state.destinations.filter((d) =>
+      d.enabled &&
+      !state.vetoedIds.includes(d.id) &&
+      (f.budget.length === 0 || f.budget.includes(d.budget)) &&
+      (f.distance.length === 0 || f.distance.includes(d.distance)) &&
+      d.party.includes(f.party) &&
+      (f.vibe.length === 0 || d.vibes.some((v) => f.vibe.includes(v))) &&
+      (f.season.length === 0 || d.seasons.some((s) => f.season.includes(s)))
+    );
   }
 
   // ── Elements ──────────────────────────────────────────────────────
@@ -99,15 +118,42 @@
   const closeManageBtn = document.getElementById('close-manage-btn');
   const destList = document.getElementById('dest-list');
   const addForm = document.getElementById('add-form');
+  const formTitle = document.getElementById('form-title');
+  const formSubmit = document.getElementById('form-submit');
+  const cancelEditBtn = document.getElementById('cancel-edit-btn');
 
   const historyList = document.getElementById('history-list');
   const clearHistoryBtn = document.getElementById('clear-history-btn');
+
+  // ── Wheel tabs ────────────────────────────────────────────────────
+  document.querySelectorAll('.wheel-tabs .tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      if (spinning || tab.dataset.wheel === wheelId) return;
+      wheelId = tab.dataset.wheel;
+      location.hash = wheelId === 'holidays' ? '' : wheelId;
+      syncTabs();
+      loadFilters();
+      syncFilterButtons();
+      startNewRound();
+      loadWheelData();
+    });
+  });
+
+  function syncTabs() {
+    document.querySelectorAll('.wheel-tabs .tab').forEach((tab) => {
+      tab.classList.toggle('active', tab.dataset.wheel === wheelId);
+    });
+  }
 
   // ── Wheel drawing ─────────────────────────────────────────────────
   let rotation = 0;          // current wheel rotation in radians
   let spinning = false;
   let currentSegments = [];  // destinations currently on the wheel
   let pendingResult = null;
+
+  function isFavorite(d) {
+    return !!d.favorite;
+  }
 
   function drawWheel() {
     const size = canvas.width;
@@ -268,22 +314,25 @@
     launchConfetti();
   }
 
-  acceptBtn.addEventListener('click', () => {
-    if (pendingResult) {
-      state.history.unshift({
-        name: pendingResult.name,
-        flag: pendingResult.flag,
-        date: new Date().toISOString(),
-      });
-      state.history = state.history.slice(0, 20);
-      saveState();
-      renderHistory();
-    }
+  acceptBtn.addEventListener('click', async () => {
+    const result = pendingResult;
+    pendingResult = null;
     resultModal.close();
     startNewRound();
+    if (result) {
+      wheelHint.textContent = `${result.flag} ${result.name} it is — time to book! 🧳`;
+      try {
+        state.history = await api('/history', {
+          method: 'POST',
+          body: JSON.stringify({ name: result.name, flag: result.flag }),
+        });
+      } catch (err) {
+        console.error(err);
+        wheelHint.textContent = '⚠️ Could not save to history — is the server still running?';
+      }
+      renderHistory();
+    }
     refresh();
-    wheelHint.textContent = `${pendingResult.flag} ${pendingResult.name} it is — time to book! 🧳`;
-    pendingResult = null;
   });
 
   vetoBtn.addEventListener('click', () => {
@@ -340,17 +389,25 @@
     confettiRaf = requestAnimationFrame(tick);
   }
 
-  // ── Filters ───────────────────────────────────────────────────────
+  // ── Filters (multi-select chips; "Any" clears the group) ─────────
   document.querySelectorAll('.filter-group').forEach((group) => {
     const key = group.dataset.filter;
     group.addEventListener('click', (e) => {
       const btn = e.target.closest('.seg-btn');
       if (!btn || spinning) return;
-      group.querySelectorAll('.seg-btn').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      state.filters[key] = btn.dataset.value;
+      const value = btn.dataset.value;
+      if (key === 'party') {
+        state.filters.party = value;
+      } else if (value === 'any') {
+        state.filters[key] = [];
+      } else {
+        const set = new Set(state.filters[key]);
+        set.has(value) ? set.delete(value) : set.add(value);
+        state.filters[key] = [...set];
+      }
       startNewRound(); // changing preferences resets vetoes
-      saveState();
+      saveFilters();
+      syncFilterButtons();
       refresh();
     });
   });
@@ -359,55 +416,63 @@
     document.querySelectorAll('.filter-group').forEach((group) => {
       const key = group.dataset.filter;
       group.querySelectorAll('.seg-btn').forEach((b) => {
-        b.classList.toggle('active', b.dataset.value === state.filters[key]);
+        if (key === 'party') {
+          b.classList.toggle('active', b.dataset.value === state.filters.party);
+        } else if (b.dataset.value === 'any') {
+          b.classList.toggle('active', state.filters[key].length === 0);
+        } else {
+          b.classList.toggle('active', state.filters[key].includes(b.dataset.value));
+        }
       });
     });
   }
 
   // ── Manage destinations ───────────────────────────────────────────
   manageBtn.addEventListener('click', () => {
+    exitEditMode();
     renderDestList();
     manageModal.showModal();
   });
   closeManageBtn.addEventListener('click', () => manageModal.close());
-  manageModal.addEventListener('close', () => refresh());
+  manageModal.addEventListener('close', () => {
+    exitEditMode();
+    refresh();
+  });
+
+  async function patchDestination(id, changes) {
+    const updated = await api(`/destinations/${id}`, { method: 'PUT', body: JSON.stringify(changes) });
+    const i = state.destinations.findIndex((d) => d.id === id);
+    if (i !== -1) state.destinations[i] = updated;
+    return updated;
+  }
 
   function renderDestList() {
     destList.innerHTML = '';
-    const customIds = new Set(state.customDestinations.map((d) => d.id));
-    for (const d of allDestinations()) {
+    for (const d of state.destinations) {
       const li = document.createElement('li');
-      const disabled = state.disabledIds.includes(d.id);
-      li.classList.toggle('disabled', disabled);
+      li.classList.toggle('disabled', !d.enabled);
 
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
-      checkbox.checked = !disabled;
-      checkbox.addEventListener('change', () => {
-        if (checkbox.checked) {
-          state.disabledIds = state.disabledIds.filter((id) => id !== d.id);
-        } else {
-          state.disabledIds.push(d.id);
-        }
+      checkbox.checked = d.enabled;
+      checkbox.title = 'On the wheel?';
+      checkbox.addEventListener('change', async () => {
+        await patchDestination(d.id, { enabled: checkbox.checked }).catch(console.error);
         li.classList.toggle('disabled', !checkbox.checked);
-        saveState();
       });
 
       const star = document.createElement('button');
       star.type = 'button';
       star.className = 'star-btn';
       star.title = 'Favourites get a double chance on the wheel';
-      star.textContent = isFavorite(d) ? '⭐' : '☆';
-      star.classList.toggle('starred', isFavorite(d));
-      star.addEventListener('click', () => {
-        if (isFavorite(d)) {
-          state.favoriteIds = state.favoriteIds.filter((id) => id !== d.id);
-        } else {
-          state.favoriteIds.push(d.id);
-        }
-        star.textContent = isFavorite(d) ? '⭐' : '☆';
-        star.classList.toggle('starred', isFavorite(d));
-        saveState();
+      star.textContent = d.favorite ? '⭐' : '☆';
+      star.classList.toggle('starred', d.favorite);
+      star.addEventListener('click', async () => {
+        const updated = await patchDestination(d.id, { favorite: !d.favorite }).catch(console.error);
+        if (!updated) return;
+        d.favorite = updated.favorite;
+        star.textContent = d.favorite ? '⭐' : '☆';
+        star.classList.toggle('starred', d.favorite);
       });
 
       const name = document.createElement('span');
@@ -418,50 +483,98 @@
       meta.className = 'dest-meta';
       meta.textContent = `${d.budget} · ${DISTANCE_LABELS[d.distance]}`;
 
-      li.append(checkbox, star, name, meta);
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'edit-btn';
+      edit.title = 'Edit this destination';
+      edit.textContent = '✏️';
+      edit.addEventListener('click', () => enterEditMode(d));
 
-      if (customIds.has(d.id)) {
-        const del = document.createElement('button');
-        del.type = 'button';
-        del.className = 'del-btn';
-        del.title = 'Remove this destination';
-        del.textContent = '✕';
-        del.addEventListener('click', () => {
-          state.customDestinations = state.customDestinations.filter((c) => c.id !== d.id);
-          state.disabledIds = state.disabledIds.filter((id) => id !== d.id);
-          saveState();
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'del-btn';
+      del.title = 'Remove this destination';
+      del.textContent = '✕';
+      del.addEventListener('click', async () => {
+        if (!confirm(`Remove ${d.name} for good?`)) return;
+        try {
+          await api(`/destinations/${d.id}`, { method: 'DELETE' });
+          state.destinations = state.destinations.filter((x) => x.id !== d.id);
+          if (state.editingId === d.id) exitEditMode();
           renderDestList();
-        });
-        li.append(del);
-      }
+        } catch (err) {
+          console.error(err);
+        }
+      });
+
+      li.append(checkbox, star, name, meta, edit, del);
       destList.append(li);
     }
   }
 
+  // ── Add / edit form ───────────────────────────────────────────────
   function checkedValues(containerId) {
     return Array.from(document.querySelectorAll(`#${containerId} input:checked`)).map((i) => i.value);
   }
 
-  addForm.addEventListener('submit', (e) => {
+  function setCheckedValues(containerId, values) {
+    document.querySelectorAll(`#${containerId} input`).forEach((input) => {
+      input.checked = values.includes(input.value);
+    });
+  }
+
+  function enterEditMode(d) {
+    state.editingId = d.id;
+    formTitle.textContent = `Edit ${d.name}`;
+    formSubmit.textContent = '💾 Save changes';
+    cancelEditBtn.hidden = false;
+    document.getElementById('add-name').value = d.name;
+    document.getElementById('add-flag').value = d.flag;
+    document.getElementById('add-budget').value = d.budget;
+    document.getElementById('add-distance').value = d.distance;
+    setCheckedValues('add-vibes', d.vibes);
+    setCheckedValues('add-seasons', d.seasons);
+    setCheckedValues('add-party', d.party);
+    addForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('add-name').focus();
+  }
+
+  function exitEditMode() {
+    state.editingId = null;
+    formTitle.textContent = 'Add your own';
+    formSubmit.textContent = '➕ Add destination';
+    cancelEditBtn.hidden = true;
+    addForm.reset();
+  }
+
+  cancelEditBtn.addEventListener('click', exitEditMode);
+
+  addForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('add-name').value.trim();
     if (!name) return;
-    const vibes = checkedValues('add-vibes');
-    const seasons = checkedValues('add-seasons');
-    const party = checkedValues('add-party');
-    state.customDestinations.push({
-      id: 'custom-' + Date.now(),
+    const payload = {
       name,
       flag: document.getElementById('add-flag').value.trim() || '📍',
       budget: document.getElementById('add-budget').value,
       distance: document.getElementById('add-distance').value,
-      vibes: vibes.length ? vibes : ['nature', 'culture', 'food'],
-      seasons: seasons.length ? seasons : ['spring', 'summer', 'autumn', 'winter'],
-      party: party.length ? party : ['couple', 'group'],
-    });
-    saveState();
-    addForm.reset();
-    renderDestList();
+      vibes: checkedValues('add-vibes'),
+      seasons: checkedValues('add-seasons'),
+      party: checkedValues('add-party'),
+    };
+    try {
+      if (state.editingId) {
+        await patchDestination(state.editingId, payload);
+      } else {
+        const created = await api('/destinations', { method: 'POST', body: JSON.stringify(payload) });
+        state.destinations.push(created);
+      }
+      exitEditMode();
+      renderDestList();
+    } catch (err) {
+      console.error(err);
+      alert('Could not save the destination — is the server still running?');
+    }
   });
 
   // ── History ───────────────────────────────────────────────────────
@@ -487,10 +600,14 @@
     }
   }
 
-  clearHistoryBtn.addEventListener('click', () => {
-    state.history = [];
-    saveState();
-    renderHistory();
+  clearHistoryBtn.addEventListener('click', async () => {
+    try {
+      await api('/history', { method: 'DELETE' });
+      state.history = [];
+      renderHistory();
+    } catch (err) {
+      console.error(err);
+    }
   });
 
   // ── Refresh ───────────────────────────────────────────────────────
@@ -507,8 +624,10 @@
   spinBtn.addEventListener('click', spin);
 
   // ── Init ──────────────────────────────────────────────────────────
-  loadState();
+  syncTabs();
+  loadFilters();
   syncFilterButtons();
   renderHistory();
   refresh();
+  loadWheelData();
 })();

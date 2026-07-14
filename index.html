@@ -12,6 +12,10 @@
   <header class="site-header">
     <h1>🌍 Wheel of Wander</h1>
     <p class="tagline">Can't agree on the next trip? Let the wheel decide.</p>
+    <nav class="wheel-tabs" aria-label="Wheel selection">
+      <button type="button" class="tab active" data-wheel="holidays">🌍 Holidays</button>
+      <button type="button" class="tab" data-wheel="citytrips">🏙️ City trips</button>
+    </nav>
   </header>
 
   <main class="layout">
@@ -115,7 +119,7 @@
     </div>
 
     <form id="add-form" class="add-form">
-      <h3>Add your own</h3>
+      <h3 id="form-title">Add your own</h3>
       <div class="add-grid">
         <input type="text" id="add-name" placeholder="Destination name" required maxlength="40">
         <input type="text" id="add-flag" placeholder="Emoji, e.g. 🏝️" maxlength="8">
@@ -149,19 +153,21 @@
         <label><input type="checkbox" value="couple" checked> Just us two</label>
         <label><input type="checkbox" value="group" checked> Friends / family</label>
       </div>
-      <button type="submit" class="btn btn-primary">➕ Add destination</button>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary" id="form-submit">➕ Add destination</button>
+        <button type="button" class="btn btn-ghost" id="cancel-edit-btn" hidden>Cancel</button>
+      </div>
     </form>
 
     <h3>All destinations</h3>
-    <p class="manage-hint">Untick a destination to keep it off the wheel. ⭐ Starred favourites get a double-width segment — twice the chance to win.</p>
+    <p class="manage-hint">Untick a destination to keep it off the wheel, ✏️ edit or ✕ delete it. ⭐ Starred favourites get a double-width segment — twice the chance to win.</p>
     <ul id="dest-list" class="dest-list"></ul>
   </dialog>
 
   <footer class="site-footer">
-    Made for two indecisive travellers ❤️ · everything is saved in your browser
+    Made for two indecisive travellers ❤️ · destinations &amp; history live on your own server
   </footer>
 
-  <script src="data.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
