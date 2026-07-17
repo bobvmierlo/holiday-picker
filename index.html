@@ -110,6 +110,17 @@
         </div>
       </fieldset>
 
+      <fieldset class="ob-group" id="ob-favorites">
+        <legend>⭐ Already dreaming of somewhere? <small>optional — your picks start as starred favourites, even beyond your roam range</small></legend>
+        <input type="text" id="fav-search" class="fav-search" placeholder="🔍 Type to filter the list…" autocomplete="off">
+        <div class="fav-picker">
+          <p class="fav-group-label">🌍 Countries</p>
+          <div class="segmented" id="fav-holidays"></div>
+          <p class="fav-group-label">🏙️ Cities</p>
+          <div class="segmented" id="fav-citytrips"></div>
+        </div>
+      </fieldset>
+
       <button type="button" class="btn btn-primary" id="onboard-submit">Build our wheels 🎡</button>
       <p class="form-error" id="onboard-error" role="alert"></p>
 
@@ -220,11 +231,29 @@
     <p class="result-flag" id="result-flag"></p>
     <h2 class="result-name" id="result-name"></h2>
     <p class="result-tags" id="result-tags"></p>
+    <ul class="link-list result-links" id="result-links"></ul>
     <div class="modal-actions">
       <button type="button" class="btn btn-primary" id="accept-btn">It's a match! 🎉</button>
       <button type="button" class="btn btn-ghost" id="veto-btn">Veto &amp; respin 🙅</button>
     </div>
     <p class="veto-note" id="veto-note">Each of you gets one veto per round — use it wisely.</p>
+  </dialog>
+
+  <!-- ── Destination info modal ─────────────────────────────────────── -->
+  <dialog id="info-modal" class="modal info-modal">
+    <div class="manage-header">
+      <h2>📍 About this place</h2>
+      <button type="button" class="btn btn-ghost" id="close-info-btn">Close</button>
+    </div>
+    <p class="result-flag info-flag" id="info-flag"></p>
+    <h2 class="result-name" id="info-name"></h2>
+    <p class="result-tags" id="info-tags"></p>
+    <p class="info-notes" id="info-notes" hidden></p>
+    <h3>🔗 Read more</h3>
+    <ul class="link-list" id="info-links"></ul>
+    <p class="manage-hint" id="info-edit-hint">Add your own notes and links — hotel finds, blog posts, that one
+      restaurant you have to try.</p>
+    <button type="button" class="btn btn-ghost" id="info-edit-btn">✏️ Edit notes &amp; links</button>
   </dialog>
 
   <!-- ── Share modal ────────────────────────────────────────────────── -->
@@ -324,6 +353,13 @@
         <span class="checks-label">Suits:</span>
         <label><input type="checkbox" value="couple" checked> Just us two</label>
         <label><input type="checkbox" value="group" checked> Friends / family</label>
+      </div>
+      <textarea id="add-notes" rows="2" maxlength="1000"
+                placeholder="Notes — why this place, best time to go, hotel ideas…"></textarea>
+      <div class="link-editor">
+        <span class="checks-label">Links:</span>
+        <div class="link-rows" id="link-rows"></div>
+        <button type="button" class="btn btn-ghost btn-small" id="add-link-btn">➕ Add a link</button>
       </div>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary" id="form-submit">➕ Add destination</button>

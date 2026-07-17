@@ -192,6 +192,17 @@ body {
 }
 .history-list .when { color: var(--text-dim); font-size: 0.78rem; white-space: nowrap; }
 .history-empty { color: var(--text-dim); font-size: 0.88rem; font-style: italic; }
+.history-name {
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  padding: 0;
+  flex: 1;
+  cursor: pointer;
+}
+.history-name:hover { text-decoration: underline; }
 
 /* ── Modals ────────────────────────────────────────────────────────── */
 .modal {
@@ -215,6 +226,29 @@ body {
 .modal-actions { display: flex; gap: 0.7rem; justify-content: center; flex-wrap: wrap; }
 .veto-note { color: var(--text-dim); font-size: 0.78rem; margin-top: 0.9rem; }
 
+/* ── Destination links & info modal ────────────────────────────────── */
+.link-list { list-style: none; display: flex; flex-direction: column; gap: 0.45rem; margin: 0.3rem 0 0.9rem; }
+.link-list a { color: #8aa9ff; font-size: 0.9rem; word-break: break-word; }
+.link-list a:hover { color: #b3c6ff; }
+.result-links { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 0.4rem 1.1rem; margin: -0.5rem 0 1.1rem; }
+.result-links a { font-size: 0.82rem; }
+
+.info-modal { text-align: center; }
+.info-modal .manage-header { text-align: left; }
+.info-modal h3 { font-size: 0.95rem; margin: 0.9rem 0 0.3rem; }
+.info-flag { font-size: 3rem; }
+.info-modal .result-name { font-size: 1.6rem; }
+.info-notes {
+  white-space: pre-wrap;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+  margin: 0.2rem 0 0.4rem;
+  text-align: left;
+}
+
 /* ── Manage modal ──────────────────────────────────────────────────── */
 .manage-modal { max-width: min(640px, 94vw); max-height: 86vh; overflow-y: auto; }
 .manage-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
@@ -232,7 +266,7 @@ body {
   gap: 0.6rem;
 }
 .add-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-.add-form input[type="text"], .add-form select {
+.add-form input[type="text"], .add-form select, .add-form textarea {
   font: inherit;
   font-size: 0.88rem;
   color: var(--text);
@@ -245,6 +279,23 @@ body {
 .checks-label { color: var(--text-dim); min-width: 3.6rem; }
 .add-checks label { display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer; }
 .form-actions { display: flex; gap: 0.6rem; }
+
+.add-form textarea { resize: vertical; font-family: inherit; }
+.link-editor { display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.85rem; }
+.link-rows { display: flex; flex-direction: column; gap: 0.4rem; }
+.link-rows:empty { display: none; }
+.link-row { display: flex; gap: 0.4rem; align-items: center; }
+.link-row .link-label { flex: 0 1 34%; min-width: 0; }
+.link-row .link-url { flex: 1; min-width: 0; }
+.link-row .del-btn {
+  background: none;
+  border: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.1rem 0.3rem;
+}
+.link-editor .btn { align-self: flex-start; }
 
 .dest-list { list-style: none; display: flex; flex-direction: column; gap: 0.35rem; }
 .dest-list li {
@@ -381,6 +432,29 @@ body {
 .ob-group { border: 0; margin-bottom: 1.15rem; }
 .ob-group legend { font-size: 0.9rem; margin-bottom: 0.5rem; }
 .ob-group legend small { color: var(--text-dim); font-weight: 400; font-size: 0.78rem; }
+
+/* Onboarding favourites picker */
+.fav-search {
+  width: 100%;
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 0.45rem 0.7rem;
+  margin-bottom: 0.5rem;
+}
+.fav-search:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fav-picker {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 0.7rem;
+}
+.fav-group-label { font-size: 0.78rem; color: var(--text-dim); margin: 0.7rem 0 0.4rem; }
+.fav-group-label:first-child { margin-top: 0; }
 
 .join-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
 .join-row input { flex: 1; min-width: 0; text-transform: uppercase; }

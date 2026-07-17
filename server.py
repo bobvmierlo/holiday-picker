@@ -43,6 +43,7 @@ import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from flask import Flask, abort, jsonify, request, send_from_directory
 from werkzeug.exceptions import HTTPException
@@ -115,9 +116,27 @@ def catalog(wheel):
     return json.loads(WHEEL_SEEDS[wheel].read_text(encoding="utf-8"))
 
 
+def default_links(name):
+    """Starter reading links for a seeded destination. The catalogue's
+    tags are hand-curated editorial guesses; these links point at places
+    to read up on (and double-check) a pick. Wikivoyage/Wikipedia keep
+    redirects for alternate names (Türkiye → Turkey), so building the
+    URL from the display name is safe."""
+    slug = quote(name.replace(" ", "_"))
+    return [
+        {"label": "Wikivoyage travel guide", "url": f"https://en.wikivoyage.org/wiki/{slug}"},
+        {"label": "Wikipedia", "url": f"https://en.wikipedia.org/wiki/{slug}"},
+    ]
+
+
 def default_wheel(wheel):
     """Full catalogue as shipped — used when migrating pre-account data."""
-    dests = [{k: v for k, v in entry.items() if k != "near"} for entry in catalog(wheel)]
+    dests = []
+    for entry in catalog(wheel):
+        dest = {k: v for k, v in entry.items() if k != "near"}
+        dest.setdefault("notes", "")
+        dest.setdefault("links", default_links(entry["name"]))
+        dests.append(dest)
     return {"destinations": dests, "history": []}
 
 
@@ -523,7 +542,7 @@ def version():
 
 
 # ── Onboarding ───────────────────────────────────────────────────────
-def seed_wheels(home, roam, vibes, budget):
+def seed_wheels(home, roam, vibes, budget, favorites=None):
     """Build both wheels from the catalogues, tailored to the answers.
 
     - distance is recomputed relative to `home` (each catalogue entry
@@ -533,8 +552,11 @@ def seed_wheels(home, roam, vibes, budget):
     - catalogue entries marked "enabled": false are niche picks that also
       start off the wheel (a full catalogue would drown it in segments)
     - entries matching the chosen vibes (and budget) get pre-starred
+    - `favorites` ({wheel: [ids]}) are places named during onboarding:
+      starred and enabled even beyond the roam range — they asked for it
     """
     allowed = ROAM_DISTANCES[roam]
+    favorites = favorites or {}
     wheels = {}
     for wheel in WHEEL_SEEDS:
         destinations = []
@@ -556,6 +578,8 @@ def seed_wheels(home, roam, vibes, budget):
                 "party": entry["party"],
                 "favorite": False,
                 "enabled": distance in allowed and entry.get("enabled", True),
+                "notes": entry.get("notes", ""),
+                "links": entry.get("links") or default_links(entry["name"]),
             })
         if vibes:
             scored = []
@@ -570,8 +594,27 @@ def seed_wheels(home, roam, vibes, budget):
             scored.sort(key=lambda pair: -pair[0])
             for _, dest in scored[:MAX_SEED_FAVORITES]:
                 dest["favorite"] = True
+        picked = set(favorites.get(wheel, []))
+        for dest in destinations:
+            if dest["id"] in picked:
+                dest["favorite"] = True
+                dest["enabled"] = True
         wheels[wheel] = {"destinations": destinations, "history": []}
     return wheels
+
+
+@app.get("/api/catalog")
+def catalog_overview():
+    """Names of everything in the seed catalogues, per wheel — lets the
+    onboarding screen offer a favourites picker. Unknown ids sent back
+    with the onboarding answers are simply ignored by seed_wheels."""
+    with _lock:
+        db = load_db()
+        current_user(db)
+    return jsonify({
+        wheel: [{"id": e["id"], "name": e["name"], "flag": e["flag"]} for e in catalog(wheel)]
+        for wheel in WHEEL_SEEDS
+    })
 
 
 @app.post("/api/onboarding")
@@ -581,6 +624,7 @@ def onboarding():
     roam = payload.get("roam", "europe")
     budget = payload.get("budget", "mix")
     vibes = payload.get("vibes", [])
+    raw_favs = payload.get("favorites")
     if home not in HOME_REGIONS:
         abort(400, description="tell us where home is first")
     if roam not in ROAM_DISTANCES:
@@ -588,19 +632,41 @@ def onboarding():
     if budget not in BUDGET_STYLES:
         abort(400, description="unknown budget style")
     vibes = [v for v in vibes if v in VIBES] if isinstance(vibes, list) else []
+    if not isinstance(raw_favs, dict):
+        raw_favs = {}
+    favorites = {}
+    for wheel in WHEEL_SEEDS:
+        values = raw_favs.get(wheel, [])
+        favorites[wheel] = [v for v in values if isinstance(v, str)] if isinstance(values, list) else []
     with _lock:
         db = load_db()
         user = current_user(db)
         space = db["spaces"][user["space"]]
         if space["onboarded"]:
             abort(409, description="these wheels are already set up")
-        space["wheels"] = seed_wheels(home, roam, vibes, budget)
+        space["wheels"] = seed_wheels(home, roam, vibes, budget, favorites)
         space["onboarded"] = True
         save_db(db)
         return jsonify(me_payload(db, user))
 
 
 # ── Validation ───────────────────────────────────────────────────────
+def clean_links(values, fallback):
+    """User-supplied reading links; anything that isn't http(s) is dropped."""
+    if not isinstance(values, list):
+        return fallback
+    links = []
+    for item in values[:12]:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url", "")).strip()[:300]
+        if not url.startswith(("http://", "https://")):
+            continue
+        label = str(item.get("label", "")).strip()[:60]
+        links.append({"label": label or url, "url": url})
+    return links
+
+
 def clean_destination(payload, existing=None):
     """Normalise and validate a destination payload; raises ValueError."""
     base = existing or {}
@@ -631,6 +697,8 @@ def clean_destination(payload, existing=None):
         "party": subset("party", PARTIES, sorted(PARTIES)),
         "favorite": bool(payload.get("favorite", base.get("favorite", False))),
         "enabled": bool(payload.get("enabled", base.get("enabled", True))),
+        "notes": str(payload.get("notes", base.get("notes", ""))).strip()[:1000],
+        "links": clean_links(payload.get("links", base.get("links", [])), base.get("links", [])),
     }
 
 
@@ -671,8 +739,9 @@ def round_payload(db, user, data):
     }
 
 
-def finalize_pick(db, user, data, name, flag, by_name):
+def finalize_pick(db, user, data, dest_id, name, flag, by_name):
     entry = {
+        "dest_id": dest_id,  # lets the frontend link back to the destination's info
         "name": name,
         "flag": flag,
         "date": datetime.now(timezone.utc).isoformat(),
@@ -742,7 +811,7 @@ def propose_pick(wheel):
             }
             save_db(db)
             return jsonify({"final": False, "round": round_payload(db, user, data)})
-        finalize_pick(db, user, data, dest["name"], dest["flag"], user["name"])
+        finalize_pick(db, user, data, dest["id"], dest["name"], dest["flag"], user["name"])
         save_db(db)
         return jsonify({
             "final": True,
@@ -763,7 +832,7 @@ def confirm_pick(wheel):
             abort(404, description="no pick is waiting for a thumbs-up")
         if pending["by"] == user["id"]:
             abort(400, description="your partner has to confirm this one")
-        finalize_pick(db, user, data, pending["name"], pending["flag"], pending["by_name"])
+        finalize_pick(db, user, data, pending["dest_id"], pending["name"], pending["flag"], pending["by_name"])
         save_db(db)
         return jsonify({"history": data["history"], "round": round_payload(db, user, data)})
 

@@ -9,12 +9,14 @@ wheels; the frontend is plain HTML/CSS/JS with no build step.
 - **Accounts** 👤 — registering takes ten seconds: a name and a password,
   nothing else. Your destinations, favourites and filter preferences are
   saved to your account.
-- **Onboarding** 🧭 — four quick questions on first login (where's home,
-  how far you'll roam, what you love on a trip, budget style) seed your
-  wheels with destinations that make sense for you: distances are
-  computed relative to *your* home region, far-away places are parked as
-  disabled instead of cluttering the wheel, and the best vibe/budget
-  matches are pre-starred as favourites.
+- **Onboarding** 🧭 — a few quick questions on first login (where's home,
+  how far you'll roam, what you love on a trip, budget style, and which
+  places you're already dreaming of) seed your wheels with destinations
+  that make sense for you: distances are computed relative to *your*
+  home region, far-away places are parked as disabled instead of
+  cluttering the wheel, the best vibe/budget matches are pre-starred as
+  favourites, and the places you picked yourself start starred too —
+  even when they're beyond your roam range.
 - **Sharing for couples** 🔗 — every set of wheels has a share code and
   an invite link. Send your partner the link and the account they create
   through it joins your wheels automatically (or they enter the code by
@@ -48,6 +50,13 @@ wheels; the frontend is plain HTML/CSS/JS with no build step.
   a pick makes it into the history.
 - **Spin history** 📖 — accepted destinations are saved (including who
   spun them) so you can look back at past picks.
+- **Destination info & links** 📍 — every destination can carry notes
+  and links. Click a place in the spin history to see its tags, your
+  notes, and clickable links (seeded destinations start with their
+  Wikivoyage and Wikipedia pages); the spin result shows the same links
+  so you can start reading up right away. Add your own links — hotel
+  finds, blog posts, that one restaurant — and notes via ✏️ edit in the
+  manage panel (or the shortcut button in the info view).
 - **Admin** 🛠️ — the first account ever registered runs the place: it can
   make other users admin, pull someone out of shared wheels, delete
   accounts, and trigger a server self-update (see below).
@@ -133,6 +142,33 @@ The service stores accounts, wheels and history in
 your data survives updates and restarts. Accounts keep casual visitors
 out, but the app still speaks plain HTTP — run it on your home network
 (or behind a reverse proxy with TLS), not naked on the open internet.
+
+## Seed data & sources
+
+The two starting catalogues —
+[`seed-destinations.json`](seed-destinations.json) (~65 countries) and
+[`seed-citytrips.json`](seed-citytrips.json) (~65 cities) — were
+**hand-curated for this app**, not imported from an external dataset.
+The tags are subjective editorial estimates meant to make the wheel
+useful on day one, roughly:
+
+- `budget` — typical price level for visitors from Western Europe
+  (accommodation, food, getting around; flights not included);
+- `vibes` — what the place is best known for as a trip;
+- `seasons` — when a visit is usually at its best (e.g. Mediterranean
+  summers, Alpine winters);
+- `near` — the home regions from which it's realistically reachable by
+  car or train.
+
+Treat them as conversation starters, not travel advice — and correct
+anything you disagree with in ⚙️ Manage destinations.
+
+For sources, every seeded destination starts with links to its
+[Wikivoyage](https://en.wikivoyage.org) travel guide and
+[Wikipedia](https://en.wikipedia.org) article, shown in the spin result
+and in the info view behind every spin-history entry. You can replace or
+extend these per destination with your own links (official tourism
+sites, blogs, hotel pages, …) via ✏️ edit.
 
 ## Customising
 

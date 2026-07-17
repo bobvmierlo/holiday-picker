@@ -201,6 +201,7 @@
   const resultFlag = document.getElementById('result-flag');
   const resultName = document.getElementById('result-name');
   const resultTags = document.getElementById('result-tags');
+  const resultLinks = document.getElementById('result-links');
   const acceptBtn = document.getElementById('accept-btn');
   const vetoBtn = document.getElementById('veto-btn');
   const vetoNote = document.getElementById('veto-note');
@@ -219,6 +220,16 @@
   const adminVersion = document.getElementById('admin-version');
   const updateStatus = document.getElementById('update-status');
   const footerVersion = document.getElementById('footer-version');
+
+  const infoModal = document.getElementById('info-modal');
+  const closeInfoBtn = document.getElementById('close-info-btn');
+  const infoFlag = document.getElementById('info-flag');
+  const infoName = document.getElementById('info-name');
+  const infoTags = document.getElementById('info-tags');
+  const infoNotes = document.getElementById('info-notes');
+  const infoLinks = document.getElementById('info-links');
+  const infoEditHint = document.getElementById('info-edit-hint');
+  const infoEditBtn = document.getElementById('info-edit-btn');
 
   const manageModal = document.getElementById('manage-modal');
   const manageBtn = document.getElementById('manage-btn');
@@ -257,6 +268,7 @@
       document.getElementById('onboard-name').textContent = me.user.name;
       legacyBanner.hidden = !me.legacy_available;
       if (invite) onboardCode.value = invite;
+      loadFavCatalog();
       showView('onboard');
       return;
     }
@@ -336,9 +348,14 @@
   });
 
   // ── Onboarding ────────────────────────────────────────────────────
-  const onboardAnswers = { home: null, roam: 'europe', vibes: [], budget: 'mix' };
+  const onboardAnswers = {
+    home: null, roam: 'europe', vibes: [], budget: 'mix',
+    favorites: { holidays: [], citytrips: [] },
+  };
 
-  document.querySelectorAll('#onboard-view .ob-group').forEach((group) => {
+  // the favourites picker has its own handler — only wire up the
+  // single-answer question groups here
+  document.querySelectorAll('#onboard-view .ob-group[data-question]').forEach((group) => {
     const question = group.dataset.question;
     const multi = group.hasAttribute('data-multi');
     group.addEventListener('click', (e) => {
@@ -355,6 +372,49 @@
         group.querySelectorAll('.seg-btn').forEach((b) => setActive(b, b === btn));
       }
       onboardError.textContent = '';
+    });
+  });
+
+  // Favourites picker: every catalogue entry as a toggle chip, with a
+  // little search box because the full list is long.
+  const favSearch = document.getElementById('fav-search');
+  const favContainers = {
+    holidays: document.getElementById('fav-holidays'),
+    citytrips: document.getElementById('fav-citytrips'),
+  };
+  let favCatalogLoaded = false;
+
+  async function loadFavCatalog() {
+    if (favCatalogLoaded) return;
+    try {
+      const cat = await rootApi('/catalog');
+      for (const [wheel, container] of Object.entries(favContainers)) {
+        container.innerHTML = '';
+        for (const entry of cat[wheel] || []) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'seg-btn';
+          btn.dataset.name = entry.name.toLowerCase();
+          btn.textContent = `${entry.flag} ${entry.name}`;
+          btn.addEventListener('click', () => {
+            const set = new Set(onboardAnswers.favorites[wheel]);
+            set.has(entry.id) ? set.delete(entry.id) : set.add(entry.id);
+            onboardAnswers.favorites[wheel] = [...set];
+            setActive(btn, set.has(entry.id));
+          });
+          container.append(btn);
+        }
+      }
+      favCatalogLoaded = true;
+    } catch (err) {
+      console.error(err); // no picker then — onboarding works fine without it
+    }
+  }
+
+  favSearch.addEventListener('input', () => {
+    const q = favSearch.value.trim().toLowerCase();
+    document.querySelectorAll('#ob-favorites .seg-btn').forEach((btn) => {
+      btn.hidden = q !== '' && !btn.dataset.name.includes(q);
     });
   });
 
@@ -825,6 +885,62 @@
     requestAnimationFrame(frame);
   }
 
+  // ── Destination info & links ──────────────────────────────────────
+  // Seeded destinations carry curated links (Wikivoyage/Wikipedia by
+  // default); for anything without links — older databases, home-made
+  // destinations, deleted history entries — build the same defaults
+  // from the name. Both wikis keep redirects for alternate spellings.
+  function fallbackLinks(name) {
+    const slug = encodeURIComponent(name.replace(/ /g, '_'));
+    return [
+      { label: 'Wikivoyage travel guide', url: `https://en.wikivoyage.org/wiki/${slug}` },
+      { label: 'Wikipedia', url: `https://en.wikipedia.org/wiki/${slug}` },
+    ];
+  }
+
+  function destLinks(d) {
+    return (d.links && d.links.length) ? d.links : fallbackLinks(d.name);
+  }
+
+  function renderLinkList(el, links) {
+    el.innerHTML = '';
+    for (const link of links) {
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.href = link.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = link.label || link.url;
+      li.append(a);
+      el.append(li);
+    }
+  }
+
+  // Opened by clicking a spin history entry. Newer history entries carry
+  // the destination id; older ones only a name — match what we can.
+  function openDestInfo(item) {
+    const d = state.destinations.find((x) => x.id === item.dest_id)
+      || state.destinations.find((x) => x.name === item.name)
+      || null;
+    infoFlag.textContent = d ? d.flag : item.flag;
+    infoName.textContent = d ? d.name : item.name;
+    infoTags.textContent = d ? describe(d) : 'No longer on your destination list';
+    const notes = d && d.notes;
+    infoNotes.hidden = !notes;
+    infoNotes.textContent = notes || '';
+    renderLinkList(infoLinks, d ? destLinks(d) : fallbackLinks(item.name));
+    infoEditHint.hidden = !d;
+    infoEditBtn.hidden = !d;
+    infoEditBtn.onclick = () => {
+      infoModal.close();
+      manageBtn.click();
+      enterEditMode(d);
+    };
+    infoModal.showModal();
+  }
+
+  closeInfoBtn.addEventListener('click', () => infoModal.close());
+
   // ── Result modal ──────────────────────────────────────────────────
   function describe(d) {
     const parts = [
@@ -841,6 +957,7 @@
     resultFlag.textContent = destination.flag;
     resultName.textContent = destination.name;
     resultTags.textContent = describe(destination);
+    renderLinkList(resultLinks, destLinks(destination));
     vetoBtn.disabled = state.round.my_veto_used;
     vetoNote.textContent = state.round.my_veto_used
       ? 'You\'ve already used your veto this round — the wheel has spoken!'
@@ -1143,6 +1260,49 @@
     });
   }
 
+  // Links editor: a row of label + URL inputs per link
+  const addNotes = document.getElementById('add-notes');
+  const linkRows = document.getElementById('link-rows');
+  const addLinkBtn = document.getElementById('add-link-btn');
+
+  function addLinkRow(link = { label: '', url: '' }) {
+    const row = document.createElement('div');
+    row.className = 'link-row';
+    const label = document.createElement('input');
+    label.type = 'text';
+    label.className = 'link-label';
+    label.placeholder = 'Label, e.g. Our hotel';
+    label.maxLength = 60;
+    label.value = link.label || '';
+    const url = document.createElement('input');
+    url.type = 'text';
+    url.className = 'link-url';
+    url.placeholder = 'https://…';
+    url.maxLength = 300;
+    url.value = link.url || '';
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'del-btn';
+    del.title = 'Remove this link';
+    del.textContent = '✕';
+    del.addEventListener('click', () => row.remove());
+    row.append(label, url, del);
+    linkRows.append(row);
+    return row;
+  }
+
+  addLinkBtn.addEventListener('click', () => {
+    addLinkRow().querySelector('.link-url').focus();
+  });
+
+  function collectLinks() {
+    return Array.from(linkRows.querySelectorAll('.link-row')).map((row) => {
+      let url = row.querySelector('.link-url').value.trim();
+      if (url && !/^https?:\/\//i.test(url)) url = `https://${url}`;
+      return { label: row.querySelector('.link-label').value.trim(), url };
+    }).filter((link) => link.url);
+  }
+
   function enterEditMode(d) {
     state.editingId = d.id;
     formTitle.textContent = `Edit ${d.name}`;
@@ -1155,6 +1315,9 @@
     setCheckedValues('add-vibes', d.vibes);
     setCheckedValues('add-seasons', d.seasons);
     setCheckedValues('add-party', d.party);
+    addNotes.value = d.notes || '';
+    linkRows.innerHTML = '';
+    (d.links || []).forEach(addLinkRow);
     addForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
     document.getElementById('add-name').focus();
   }
@@ -1165,6 +1328,7 @@
     formSubmit.textContent = '➕ Add destination';
     cancelEditBtn.hidden = true;
     addForm.reset();
+    linkRows.innerHTML = '';
   }
 
   cancelEditBtn.addEventListener('click', exitEditMode);
@@ -1181,6 +1345,8 @@
       vibes: checkedValues('add-vibes'),
       seasons: checkedValues('add-seasons'),
       party: checkedValues('add-party'),
+      notes: addNotes.value.trim(),
+      links: collectLinks(),
     };
     try {
       if (state.editingId) {
@@ -1210,8 +1376,12 @@
     }
     for (const item of state.history) {
       const li = document.createElement('li');
-      const name = document.createElement('span');
+      const name = document.createElement('button');
+      name.type = 'button';
+      name.className = 'history-name';
+      name.title = 'Info & links about this place';
       name.textContent = `${item.flag} ${item.name}`;
+      name.addEventListener('click', () => openDestInfo(item));
       const when = document.createElement('span');
       when.className = 'when';
       when.textContent = new Date(item.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
