@@ -248,6 +248,28 @@ body {
   margin: 0.2rem 0 0.4rem;
   text-align: left;
 }
+.result-notes { margin: -0.4rem 0 1rem; }
+.plan-links { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 0.4rem 1.4rem; }
+
+/* Trip status controls (info view opened from the history) */
+.info-status { margin-top: 0.4rem; }
+.status-chips { justify-content: center; margin-bottom: 0.7rem; }
+.trip-date-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+.trip-date-row input {
+  font: inherit;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 0.35rem 0.55rem;
+  color-scheme: dark;
+}
 
 /* ── Manage modal ──────────────────────────────────────────────────── */
 .manage-modal { max-width: min(640px, 94vw); max-height: 86vh; overflow-y: auto; }
@@ -308,7 +330,17 @@ body {
   font-size: 0.9rem;
 }
 .dest-list li.disabled .dest-name { opacity: 0.45; text-decoration: line-through; }
-.dest-list .dest-name { flex: 1; }
+.dest-list .dest-name {
+  flex: 1;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+}
+.dest-list .dest-name:hover { text-decoration: underline; }
 .dest-list .dest-meta { color: var(--text-dim); font-size: 0.75rem; }
 .dest-list .star-btn {
   background: none;
@@ -455,6 +487,7 @@ body {
 }
 .fav-group-label { font-size: 0.78rem; color: var(--text-dim); margin: 0.7rem 0 0.4rem; }
 .fav-group-label:first-child { margin-top: 0; }
+#welcome-view .fav-picker { margin-bottom: 1.15rem; }
 
 .join-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
 .join-row input { flex: 1; min-width: 0; text-transform: uppercase; }

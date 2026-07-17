@@ -22,7 +22,9 @@ wheels; the frontend is plain HTML/CSS/JS with no build step.
   through it joins your wheels automatically (or they enter the code by
   hand); from then on you both spin the *same* wheels: destinations,
   favourites and history stay in sync, while each of you keeps your own
-  filters.
+  filters. Right after joining, a welcome screen invites the newcomer to
+  star the places *they* dream of, so the shared wheels reflect both of
+  you from day one.
 - **Two wheels** 🌍🏙️ — tabs switch between *Holidays* (whole countries)
   and *City trips* (cities in and around Europe), each with its own
   destination list and history.
@@ -38,8 +40,11 @@ wheels; the frontend is plain HTML/CSS/JS with no build step.
     adventure, wellness, or snow
   - 📅 **Season**: when you want to travel (destinations are tagged with
     their best months)
-- **Favourites** ⭐ — star the destinations you love (in the manage panel)
-  and they get a double-width segment on the wheel: twice the chance to win.
+- **Favourites** ⭐ — every star is personal: star the destinations you
+  love (in the manage panel, during onboarding, or on the joiner's
+  welcome screen) and they get a double-width segment on the wheel. A
+  place starred by *both* of you 🌟 gets a triple-width segment — the
+  wheel leans toward what you agree on.
 - **Manage the destination list** ⚙️ — untick destinations to keep them
   off the wheel, ✏️ edit any destination's name and tags, delete them, or
   add your own.
@@ -48,25 +53,34 @@ wheels; the frontend is plain HTML/CSS/JS with no build step.
   partner accepts waits for the other's thumbs-up: their devices show the
   pick with an accept-or-veto banner before it counts. A round closes when
   a pick makes it into the history.
-- **Spin history** 📖 — accepted destinations are saved (including who
-  spun them) so you can look back at past picks.
+- **Spin history & trip status** 📖 — accepted destinations are saved
+  (including who spun them) so you can look back at past picks. Each
+  pick can be marked 📅 *Booked* or ✅ *Been there* (with an optional
+  trip date) from its info view; marking a pick "been there" takes the
+  destination off the wheel automatically, so you don't spin Rome again
+  next year — turning the history into a little travel log.
 - **Destination info & links** 📍 — every destination can carry notes
-  and links. Click a place in the spin history to see its tags, your
-  notes, and clickable links (seeded destinations start with their
-  Wikivoyage and Wikipedia pages); the spin result shows the same links
-  so you can start reading up right away. Add your own links — hotel
-  finds, blog posts, that one restaurant — and notes via ✏️ edit in the
-  manage panel (or the shortcut button in the info view).
+  and links. Click a place in the spin history (or its name in the
+  manage panel) to see its tags, your notes, and clickable links
+  (seeded destinations start with their Wikivoyage and Wikipedia
+  pages), plus ready-made ✈️ flight and 🛏️ stay searches; the spin
+  result shows the notes and links too, so you can start planning right
+  away. Add your own links — hotel finds, blog posts, that one
+  restaurant — and notes via ✏️ edit in the manage panel (or the
+  shortcut button in the info view).
 - **Admin** 🛠️ — the first account ever registered runs the place: it can
   make other users admin, pull someone out of shared wheels, delete
-  accounts, and trigger a server self-update (see below).
+  accounts, download or restore a full backup of the database, and
+  trigger a server self-update (see below).
 
 **Storage**: everything lives on the server in `data/db.json` — accounts
-(passwords stored as scrypt hashes), login sessions, and each shared
-space's wheels. Only your login token stays in the browser. Databases
-from the pre-account version are migrated automatically: the onboarding
-screen offers your old destinations and history to the first account
-("keep them"), or you can answer the questions and start fresh.
+(passwords stored as scrypt hashes), login sessions (expiring after 90
+days), and each shared space's wheels. Only your login token stays in
+the browser. The admin panel can download that file as a backup and
+restore one later. Databases from the pre-account version are migrated
+automatically: the onboarding screen offers your old destinations and
+history to the first account ("keep them"), or you can answer the
+questions and start fresh.
 
 ## Running locally
 
