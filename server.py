@@ -41,8 +41,9 @@ import secrets
 import subprocess
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from flask import Flask, abort, jsonify, request, send_from_directory
 from werkzeug.exceptions import HTTPException
@@ -74,6 +75,8 @@ BUDGET_STYLES = BUDGETS | {"mix"}
 
 HISTORY_LIMIT = 50
 MAX_SEED_FAVORITES = 8  # per wheel, when onboarding picks favourites
+HISTORY_STATUSES = {"booked", "visited"}  # a pick's life after the spin
+SESSION_TTL_DAYS = 90  # log-ins older than this expire
 
 app = Flask(__name__)
 _lock = threading.Lock()
@@ -115,9 +118,27 @@ def catalog(wheel):
     return json.loads(WHEEL_SEEDS[wheel].read_text(encoding="utf-8"))
 
 
+def default_links(name):
+    """Starter reading links for a seeded destination. The catalogue's
+    tags are hand-curated editorial guesses; these links point at places
+    to read up on (and double-check) a pick. Wikivoyage/Wikipedia keep
+    redirects for alternate names (Türkiye → Turkey), so building the
+    URL from the display name is safe."""
+    slug = quote(name.replace(" ", "_"))
+    return [
+        {"label": "Wikivoyage travel guide", "url": f"https://en.wikivoyage.org/wiki/{slug}"},
+        {"label": "Wikipedia", "url": f"https://en.wikipedia.org/wiki/{slug}"},
+    ]
+
+
 def default_wheel(wheel):
     """Full catalogue as shipped — used when migrating pre-account data."""
-    dests = [{k: v for k, v in entry.items() if k != "near"} for entry in catalog(wheel)]
+    dests = []
+    for entry in catalog(wheel):
+        dest = {k: v for k, v in entry.items() if k != "near"}
+        dest.setdefault("notes", "")
+        dest.setdefault("links", default_links(entry["name"]))
+        dests.append(dest)
     return {"destinations": dests, "history": []}
 
 
@@ -219,10 +240,16 @@ def clean_prefs(payload, existing):
     return prefs
 
 
+def session_cutoff():
+    return (datetime.now(timezone.utc) - timedelta(days=SESSION_TTL_DAYS)).isoformat()
+
+
 def current_user(db):
     header = request.headers.get("Authorization", "")
     token = header[7:] if header.startswith("Bearer ") else ""
     session = db["sessions"].get(token)
+    if session and session.get("created", "") < session_cutoff():
+        session = None  # expired — same as not logged in
     user = db["users"].get(session["user"]) if session else None
     if not user:
         abort(401, description="please log in")
@@ -256,6 +283,9 @@ def me_payload(db, user):
 
 
 def start_session(db, user):
+    # a new log-in is a good moment to sweep out expired sessions
+    cutoff = session_cutoff()
+    db["sessions"] = {t: s for t, s in db["sessions"].items() if s.get("created", "") >= cutoff}
     token = secrets.token_urlsafe(32)
     db["sessions"][token] = {
         "user": user["id"],
@@ -490,6 +520,46 @@ def admin_delete_user(user_id):
         return jsonify(admin_user_list(db))
 
 
+@app.get("/api/admin/backup")
+def admin_backup():
+    """The whole database as a downloadable file — cheap insurance for a
+    self-hosted app whose world lives in one db.json."""
+    with _lock:
+        db = load_db()
+        require_admin(db)
+        payload = json.dumps(db, ensure_ascii=False, indent=2)
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    response = app.response_class(payload, mimetype="application/json")
+    response.headers["Content-Disposition"] = (
+        f"attachment; filename=wheel-of-wander-backup-{stamp}.json"
+    )
+    return response
+
+
+@app.post("/api/admin/restore")
+def admin_restore():
+    """Replace the database with an uploaded backup. The current admin's
+    login is carried over when their account exists in the backup;
+    otherwise everyone (including them) has to log in again."""
+    payload = request.get_json(force=True, silent=True)
+    if not isinstance(payload, dict) or not all(
+        isinstance(payload.get(key), dict) for key in ("users", "spaces", "sessions")
+    ):
+        abort(400, description="that doesn't look like a Wheel of Wander backup")
+    header = request.headers.get("Authorization", "")
+    token = header[7:] if header.startswith("Bearer ") else ""
+    with _lock:
+        db = load_db()
+        admin = require_admin(db)
+        payload.setdefault("version", 2)
+        relogin = admin["id"] not in payload["users"]
+        if not relogin:
+            payload["sessions"][token] = db["sessions"][token]
+        save_db(payload)
+        ensure_admin(payload)
+    return jsonify({"restored": True, "relogin": relogin})
+
+
 @app.post("/api/admin/update")
 def admin_update():
     """Ask the host to update to the latest version. The Flask process is
@@ -523,7 +593,7 @@ def version():
 
 
 # ── Onboarding ───────────────────────────────────────────────────────
-def seed_wheels(home, roam, vibes, budget):
+def seed_wheels(home, roam, vibes, budget, favorites=None, user_id=None):
     """Build both wheels from the catalogues, tailored to the answers.
 
     - distance is recomputed relative to `home` (each catalogue entry
@@ -533,8 +603,13 @@ def seed_wheels(home, roam, vibes, budget):
     - catalogue entries marked "enabled": false are niche picks that also
       start off the wheel (a full catalogue would drown it in segments)
     - entries matching the chosen vibes (and budget) get pre-starred
+    - `favorites` ({wheel: [ids]}) are places named during onboarding:
+      starred *by this user* and enabled even beyond the roam range —
+      they asked for it. Stars are per user (starred_by); a place starred
+      by both partners gets an even bigger wheel segment.
     """
     allowed = ROAM_DISTANCES[roam]
+    favorites = favorites or {}
     wheels = {}
     for wheel in WHEEL_SEEDS:
         destinations = []
@@ -555,7 +630,10 @@ def seed_wheels(home, roam, vibes, budget):
                 "seasons": entry["seasons"],
                 "party": entry["party"],
                 "favorite": False,
+                "starred_by": [],
                 "enabled": distance in allowed and entry.get("enabled", True),
+                "notes": entry.get("notes", ""),
+                "links": entry.get("links") or default_links(entry["name"]),
             })
         if vibes:
             scored = []
@@ -570,8 +648,29 @@ def seed_wheels(home, roam, vibes, budget):
             scored.sort(key=lambda pair: -pair[0])
             for _, dest in scored[:MAX_SEED_FAVORITES]:
                 dest["favorite"] = True
+        picked = set(favorites.get(wheel, []))
+        for dest in destinations:
+            if dest["id"] in picked:
+                dest["favorite"] = True
+                dest["enabled"] = True
+                if user_id:
+                    dest["starred_by"] = [user_id]
         wheels[wheel] = {"destinations": destinations, "history": []}
     return wheels
+
+
+@app.get("/api/catalog")
+def catalog_overview():
+    """Names of everything in the seed catalogues, per wheel — lets the
+    onboarding screen offer a favourites picker. Unknown ids sent back
+    with the onboarding answers are simply ignored by seed_wheels."""
+    with _lock:
+        db = load_db()
+        current_user(db)
+    return jsonify({
+        wheel: [{"id": e["id"], "name": e["name"], "flag": e["flag"]} for e in catalog(wheel)]
+        for wheel in WHEEL_SEEDS
+    })
 
 
 @app.post("/api/onboarding")
@@ -581,6 +680,7 @@ def onboarding():
     roam = payload.get("roam", "europe")
     budget = payload.get("budget", "mix")
     vibes = payload.get("vibes", [])
+    raw_favs = payload.get("favorites")
     if home not in HOME_REGIONS:
         abort(400, description="tell us where home is first")
     if roam not in ROAM_DISTANCES:
@@ -588,19 +688,41 @@ def onboarding():
     if budget not in BUDGET_STYLES:
         abort(400, description="unknown budget style")
     vibes = [v for v in vibes if v in VIBES] if isinstance(vibes, list) else []
+    if not isinstance(raw_favs, dict):
+        raw_favs = {}
+    favorites = {}
+    for wheel in WHEEL_SEEDS:
+        values = raw_favs.get(wheel, [])
+        favorites[wheel] = [v for v in values if isinstance(v, str)] if isinstance(values, list) else []
     with _lock:
         db = load_db()
         user = current_user(db)
         space = db["spaces"][user["space"]]
         if space["onboarded"]:
             abort(409, description="these wheels are already set up")
-        space["wheels"] = seed_wheels(home, roam, vibes, budget)
+        space["wheels"] = seed_wheels(home, roam, vibes, budget, favorites, user["id"])
         space["onboarded"] = True
         save_db(db)
         return jsonify(me_payload(db, user))
 
 
 # ── Validation ───────────────────────────────────────────────────────
+def clean_links(values, fallback):
+    """User-supplied reading links; anything that isn't http(s) is dropped."""
+    if not isinstance(values, list):
+        return fallback
+    links = []
+    for item in values[:12]:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url", "")).strip()[:300]
+        if not url.startswith(("http://", "https://")):
+            continue
+        label = str(item.get("label", "")).strip()[:60]
+        links.append({"label": label or url, "url": url})
+    return links
+
+
 def clean_destination(payload, existing=None):
     """Normalise and validate a destination payload; raises ValueError."""
     base = existing or {}
@@ -630,16 +752,31 @@ def clean_destination(payload, existing=None):
         "seasons": subset("seasons", SEASONS, sorted(SEASONS)),
         "party": subset("party", PARTIES, sorted(PARTIES)),
         "favorite": bool(payload.get("favorite", base.get("favorite", False))),
+        # who starred it is only changed via the "starred" toggle in the
+        # update endpoint, never straight from a payload
+        "starred_by": [s for s in base.get("starred_by", []) if isinstance(s, str)],
         "enabled": bool(payload.get("enabled", base.get("enabled", True))),
+        "notes": str(payload.get("notes", base.get("notes", ""))).strip()[:1000],
+        "links": clean_links(payload.get("links", base.get("links", [])), base.get("links", [])),
     }
 
 
 def wheel_data(db, user, wheel):
     if wheel not in WHEEL_SEEDS:
         abort(404, description=f"unknown wheel '{wheel}'")
-    return db["spaces"][user["space"]]["wheels"].setdefault(
+    data = db["spaces"][user["space"]]["wheels"].setdefault(
         wheel, {"destinations": [], "history": []}
     )
+    # History entries predating trip statuses have no id — backfill (and
+    # persist) so the status endpoint can address them.
+    changed = False
+    for entry in data["history"]:
+        if not entry.get("id"):
+            entry["id"] = "h-" + uuid.uuid4().hex[:10]
+            changed = True
+    if changed:
+        save_db(db)
+    return data
 
 
 # ── Rounds (shared vetoes + pending pick) ────────────────────────────
@@ -655,13 +792,32 @@ def round_data(data):
     return rnd
 
 
+def pending_blockers(db, space_id, rnd):
+    """Members who can still stop the pending pick: everyone in the space
+    except the picker who has neither confirmed it nor spent their veto.
+    With more than two members the pick stays pending until this list is
+    empty — every voice gets heard, not just the first to answer."""
+    p = rnd["pending"]
+    confirmed = set(p.get("confirmed", []))
+    return [
+        u for u in db["users"].values()
+        if u["space"] == space_id and u["id"] != p["by"]
+        and u["id"] not in confirmed and u["id"] not in rnd["vetoes"]
+    ]
+
+
 def round_payload(db, user, data):
     """Round state as one user sees it — 'my' fields are personalised."""
     rnd = round_data(data)
     pending = None
     if rnd["pending"]:
-        pending = {k: v for k, v in rnd["pending"].items() if k != "by"}
-        pending["mine"] = rnd["pending"]["by"] == user["id"]
+        p = rnd["pending"]
+        pending = {k: v for k, v in p.items() if k not in ("by", "confirmed")}
+        pending["mine"] = p["by"] == user["id"]
+        pending["i_confirmed"] = user["id"] in p.get("confirmed", [])
+        pending["waiting_names"] = sorted(
+            u["name"] for u in pending_blockers(db, user["space"], rnd)
+        )
     return {
         "vetoed_ids": sorted(set(rnd["vetoes"].values())),
         "my_veto_used": user["id"] in rnd["vetoes"],
@@ -671,8 +827,10 @@ def round_payload(db, user, data):
     }
 
 
-def finalize_pick(db, user, data, name, flag, by_name):
+def finalize_pick(db, user, data, dest_id, name, flag, by_name):
     entry = {
+        "id": "h-" + uuid.uuid4().hex[:10],
+        "dest_id": dest_id,  # lets the frontend link back to the destination's info
         "name": name,
         "flag": flag,
         "date": datetime.now(timezone.utc).isoformat(),
@@ -738,11 +896,12 @@ def propose_pick(wheel):
                 "flag": dest["flag"],
                 "by": user["id"],
                 "by_name": user["name"],
+                "confirmed": [],
                 "date": datetime.now(timezone.utc).isoformat(),
             }
             save_db(db)
             return jsonify({"final": False, "round": round_payload(db, user, data)})
-        finalize_pick(db, user, data, dest["name"], dest["flag"], user["name"])
+        finalize_pick(db, user, data, dest["id"], dest["name"], dest["flag"], user["name"])
         save_db(db)
         return jsonify({
             "final": True,
@@ -753,6 +912,9 @@ def propose_pick(wheel):
 
 @app.post("/api/wheels/<wheel>/round/confirm")
 def confirm_pick(wheel):
+    """A member okays the pending pick. With three or four people sharing
+    the wheels, the pick only becomes history once *everyone* who could
+    still veto has given their thumbs-up."""
     with _lock:
         db = load_db()
         user = current_user(db)
@@ -762,10 +924,20 @@ def confirm_pick(wheel):
         if not pending:
             abort(404, description="no pick is waiting for a thumbs-up")
         if pending["by"] == user["id"]:
-            abort(400, description="your partner has to confirm this one")
-        finalize_pick(db, user, data, pending["name"], pending["flag"], pending["by_name"])
+            abort(400, description="the others have to confirm this one")
+        confirmed = pending.setdefault("confirmed", [])
+        if user["id"] not in confirmed:
+            confirmed.append(user["id"])
+        if pending_blockers(db, user["space"], rnd):
+            save_db(db)
+            return jsonify({"final": False, "round": round_payload(db, user, data)})
+        finalize_pick(db, user, data, pending["dest_id"], pending["name"], pending["flag"], pending["by_name"])
         save_db(db)
-        return jsonify({"history": data["history"], "round": round_payload(db, user, data)})
+        return jsonify({
+            "final": True,
+            "history": data["history"],
+            "round": round_payload(db, user, data),
+        })
 
 
 # ── Destinations API ─────────────────────────────────────────────────
@@ -791,15 +963,26 @@ def create_destination(wheel):
 
 @app.put("/api/wheels/<wheel>/destinations/<dest_id>")
 def update_destination(wheel, dest_id):
+    payload = request.get_json(force=True, silent=True)
+    # "starred" toggles *this user's* star — handled here because
+    # clean_destination doesn't know who is asking
+    starred = payload.pop("starred", None) if isinstance(payload, dict) else None
     with _lock:
         db = load_db()
-        destinations = wheel_data(db, current_user(db), wheel)["destinations"]
+        user = current_user(db)
+        destinations = wheel_data(db, user, wheel)["destinations"]
         for i, dest in enumerate(destinations):
             if dest["id"] == dest_id:
                 try:
-                    updated = clean_destination(request.get_json(force=True, silent=True), existing=dest)
+                    updated = clean_destination(payload, existing=dest)
                 except ValueError as err:
                     abort(400, description=str(err))
+                if starred is not None:
+                    stars = set(updated["starred_by"])
+                    stars.add(user["id"]) if starred else stars.discard(user["id"])
+                    updated["starred_by"] = sorted(stars)
+                    # touching the star replaces any legacy shared star
+                    updated["favorite"] = bool(stars)
                 destinations[i] = updated
                 save_db(db)
                 return jsonify(updated)
@@ -825,6 +1008,44 @@ def list_history(wheel):
     with _lock:
         db = load_db()
         return jsonify(wheel_data(db, current_user(db), wheel)["history"])
+
+
+@app.put("/api/wheels/<wheel>/history/<entry_id>")
+def update_history(wheel, entry_id):
+    """Life after the spin: mark a past pick as booked or been-there and
+    note the trip date. Marking it visited also takes the destination off
+    the wheel (it stays in the manage list, just unticked)."""
+    payload = request.get_json(force=True, silent=True) or {}
+    with _lock:
+        db = load_db()
+        user = current_user(db)
+        data = wheel_data(db, user, wheel)
+        entry = next((e for e in data["history"] if e.get("id") == entry_id), None)
+        if entry is None:
+            abort(404, description="that history entry no longer exists")
+        if "status" in payload:
+            status = str(payload["status"] or "")
+            if status and status not in HISTORY_STATUSES:
+                abort(400, description="unknown trip status")
+            if status:
+                entry["status"] = status
+            else:
+                entry.pop("status", None)
+        if "trip_date" in payload:
+            trip_date = str(payload["trip_date"] or "").strip()[:20]
+            if trip_date:
+                entry["trip_date"] = trip_date
+            else:
+                entry.pop("trip_date", None)
+        destination = None
+        if entry.get("status") == "visited":
+            destination = next(
+                (d for d in data["destinations"] if d["id"] == entry.get("dest_id")), None
+            )
+            if destination is not None and destination["enabled"]:
+                destination["enabled"] = False
+        save_db(db)
+        return jsonify({"history": data["history"], "destination": destination})
 
 
 @app.delete("/api/wheels/<wheel>/history")

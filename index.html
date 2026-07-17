@@ -110,6 +110,17 @@
         </div>
       </fieldset>
 
+      <fieldset class="ob-group" id="ob-favorites">
+        <legend>⭐ Already dreaming of somewhere? <small>optional — your picks start as starred favourites, even beyond your roam range</small></legend>
+        <input type="text" id="fav-search" class="fav-search" placeholder="🔍 Type to filter the list…" autocomplete="off">
+        <div class="fav-picker">
+          <p class="fav-group-label">🌍 Countries</p>
+          <div class="segmented" id="fav-holidays"></div>
+          <p class="fav-group-label">🏙️ Cities</p>
+          <div class="segmented" id="fav-citytrips"></div>
+        </div>
+      </fieldset>
+
       <button type="button" class="btn btn-primary" id="onboard-submit">Build our wheels 🎡</button>
       <p class="form-error" id="onboard-error" role="alert"></p>
 
@@ -120,6 +131,28 @@
         <input type="text" id="onboard-code" placeholder="Share code, e.g. ABCD-2345" autocomplete="off">
         <button type="button" class="btn btn-ghost" id="onboard-join-btn">Join them</button>
       </div>
+    </div>
+  </section>
+
+  <!-- ── Welcome (just joined a partner's wheels) ───────────────────── -->
+  <section class="gate" id="welcome-view" hidden>
+    <div class="gate-card onboard-card">
+      <h2>Welcome aboard 🎉</h2>
+      <p class="gate-sub">You've joined <span id="welcome-partner"></span>'s wheels.
+        Now star the places <em>you</em> dream of — starred places get a bigger slice
+        of the wheel, and every extra star from a travel mate 🌟 widens it further.</p>
+      <input type="text" id="welcome-search" class="fav-search" placeholder="🔍 Type to filter the list…" autocomplete="off">
+      <div class="fav-picker" id="welcome-picker">
+        <p class="fav-group-label">🌍 Holidays</p>
+        <div class="segmented" id="welcome-holidays"></div>
+        <p class="fav-group-label">🏙️ City trips</p>
+        <div class="segmented" id="welcome-citytrips"></div>
+      </div>
+      <button type="button" class="btn btn-primary" id="welcome-submit">Star my picks ⭐</button>
+      <p class="form-error" id="welcome-error" role="alert"></p>
+      <p class="share-leave-row">
+        <button type="button" class="linklike" id="welcome-skip">Skip for now — I'll star things later</button>
+      </p>
     </div>
   </section>
 
@@ -220,11 +253,43 @@
     <p class="result-flag" id="result-flag"></p>
     <h2 class="result-name" id="result-name"></h2>
     <p class="result-tags" id="result-tags"></p>
+    <p class="info-notes result-notes" id="result-notes" hidden></p>
+    <ul class="link-list result-links" id="result-links"></ul>
     <div class="modal-actions">
       <button type="button" class="btn btn-primary" id="accept-btn">It's a match! 🎉</button>
       <button type="button" class="btn btn-ghost" id="veto-btn">Veto &amp; respin 🙅</button>
     </div>
     <p class="veto-note" id="veto-note">Each of you gets one veto per round — use it wisely.</p>
+  </dialog>
+
+  <!-- ── Destination info modal ─────────────────────────────────────── -->
+  <dialog id="info-modal" class="modal info-modal">
+    <div class="manage-header">
+      <h2>📍 About this place</h2>
+      <button type="button" class="btn btn-ghost" id="close-info-btn">Close</button>
+    </div>
+    <p class="result-flag info-flag" id="info-flag"></p>
+    <h2 class="result-name" id="info-name"></h2>
+    <p class="result-tags" id="info-tags"></p>
+    <p class="info-notes" id="info-notes" hidden></p>
+    <h3>🔗 Read more</h3>
+    <ul class="link-list" id="info-links"></ul>
+    <h3>🧭 Plan it</h3>
+    <ul class="link-list plan-links" id="info-plan"></ul>
+    <div class="info-status" id="info-status" hidden>
+      <h3>🧳 Trip status</h3>
+      <div class="segmented status-chips" id="status-chips">
+        <button type="button" class="seg-btn" data-status="">📌 Just picked</button>
+        <button type="button" class="seg-btn" data-status="booked">📅 Booked</button>
+        <button type="button" class="seg-btn" data-status="visited">✅ Been there</button>
+      </div>
+      <label class="trip-date-row">Trip date: <input type="date" id="trip-date"></label>
+      <p class="manage-hint">Marking a pick “✅ Been there” takes the destination off the wheel
+        (re-tick it in ⚙️ Manage destinations to bring it back).</p>
+    </div>
+    <p class="manage-hint" id="info-edit-hint">Add your own notes and links — hotel finds, blog posts, that one
+      restaurant you have to try.</p>
+    <button type="button" class="btn btn-ghost" id="info-edit-btn">✏️ Edit notes &amp; links</button>
   </dialog>
 
   <!-- ── Share modal ────────────────────────────────────────────────── -->
@@ -233,9 +298,10 @@
       <h2>🔗 Share your wheels</h2>
       <button type="button" class="btn btn-ghost" id="close-share-btn">Close</button>
     </div>
-    <p class="manage-hint">Give your partner this code. When they create their own account
-      and join with it, you'll both spin the same wheels — destinations, favourites and
-      history stay in sync, while each of you keeps their own filters.</p>
+    <p class="manage-hint">Give your partner — or the whole travel group, up to three or
+      four works great — this code. Everyone who creates an account and joins with it
+      spins the same wheels: destinations, favourites and history stay in sync, while
+      each of you keeps their own filters.</p>
     <div class="share-code-row">
       <code class="share-code" id="share-code"></code>
       <button type="button" class="btn btn-ghost" id="copy-code-btn">📋 Copy</button>
@@ -270,6 +336,16 @@
       pull someone out of shared wheels (they keep their account and get fresh
       wheels of their own), or delete an account for good.</p>
     <ul id="admin-user-list" class="dest-list admin-list"></ul>
+    <h3>Backup</h3>
+    <p class="manage-hint">Everything — accounts, wheels, history — lives in one
+      <code>db.json</code> on the server. Download a copy now and then; restoring
+      one <strong>replaces all current data</strong>.</p>
+    <div class="form-actions">
+      <button type="button" class="btn btn-ghost" id="admin-backup-btn">💾 Download backup</button>
+      <button type="button" class="btn btn-ghost" id="admin-restore-btn">📤 Restore from backup…</button>
+      <input type="file" id="admin-restore-file" accept=".json,application/json" hidden>
+    </div>
+    <p class="update-status" id="backup-status" role="status"></p>
     <h3>Server</h3>
     <p class="manage-hint">Fetch the latest version from git and restart the
       server. Needs the updater units from <code>deploy/</code> installed.</p>
@@ -325,6 +401,13 @@
         <label><input type="checkbox" value="couple" checked> Just us two</label>
         <label><input type="checkbox" value="group" checked> Friends / family</label>
       </div>
+      <textarea id="add-notes" rows="2" maxlength="1000"
+                placeholder="Notes — why this place, best time to go, hotel ideas…"></textarea>
+      <div class="link-editor">
+        <span class="checks-label">Links:</span>
+        <div class="link-rows" id="link-rows"></div>
+        <button type="button" class="btn btn-ghost btn-small" id="add-link-btn">➕ Add a link</button>
+      </div>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary" id="form-submit">➕ Add destination</button>
         <button type="button" class="btn btn-ghost" id="cancel-edit-btn" hidden>Cancel</button>
@@ -332,7 +415,9 @@
     </form>
 
     <h3>All destinations</h3>
-    <p class="manage-hint">Untick a destination to keep it off the wheel, ✏️ edit or ✕ delete it. ⭐ Starred favourites get a double-width segment — twice the chance to win.</p>
+    <p class="manage-hint">Untick a destination to keep it off the wheel, click its name for
+      info &amp; links, ✏️ edit or ✕ delete it. The star is <em>yours</em>: ⭐ starred places get a
+      double-width segment, and every extra star from a partner 🌟 widens it further.</p>
     <ul id="dest-list" class="dest-list"></ul>
   </dialog>
 

@@ -15,7 +15,9 @@
   };
   const BUDGET_LABELS = { low: '💶 low budget', mid: '💶💶 mid budget', high: '💶💶💶 high budget' };
   const DISTANCE_LABELS = { regional: '🚗 regional', europe: '✈️ Europe', longhaul: '🌏 long-haul' };
-  const FAVORITE_WEIGHT = 2; // favourites get a double-width wheel segment
+  // Stars are per person (starred_by). One star doubles the wheel
+  // segment; starred by both of you triples it. Destinations from before
+  // per-person stars only carry the shared `favorite` flag — worth one.
   const MULTI_FILTERS = ['budget', 'distance', 'vibe', 'season']; // 'party' stays single-choice
 
   const SEGMENT_COLORS = [
@@ -41,6 +43,10 @@
     const qs = urlParams.toString();
     history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : '') + location.hash);
   }
+
+  // Set when this user just joined an existing space (via share code or
+  // invite registration) — triggers the "star your own places" welcome.
+  let justJoined = false;
 
   const state = {
     filters: defaultFilters(),
@@ -91,7 +97,7 @@
     const before = state.round;
     state.round = round;
     if (JSON.stringify(before) === JSON.stringify(round)) return;
-    if (before.pending && before.pending.mine && !round.pending) {
+    if (before.pending && (before.pending.mine || before.pending.i_confirmed) && !round.pending) {
       wheelHint.textContent = round.vetoed_ids.includes(before.pending.dest_id)
         ? `${before.pending.flag} ${before.pending.name} got vetoed 🙅 — spin again!`
         : `${before.pending.flag} ${before.pending.name} it is — time to book! 🧳`;
@@ -201,6 +207,8 @@
   const resultFlag = document.getElementById('result-flag');
   const resultName = document.getElementById('result-name');
   const resultTags = document.getElementById('result-tags');
+  const resultNotes = document.getElementById('result-notes');
+  const resultLinks = document.getElementById('result-links');
   const acceptBtn = document.getElementById('accept-btn');
   const vetoBtn = document.getElementById('veto-btn');
   const vetoNote = document.getElementById('veto-note');
@@ -220,6 +228,20 @@
   const updateStatus = document.getElementById('update-status');
   const footerVersion = document.getElementById('footer-version');
 
+  const infoModal = document.getElementById('info-modal');
+  const closeInfoBtn = document.getElementById('close-info-btn');
+  const infoFlag = document.getElementById('info-flag');
+  const infoName = document.getElementById('info-name');
+  const infoTags = document.getElementById('info-tags');
+  const infoNotes = document.getElementById('info-notes');
+  const infoLinks = document.getElementById('info-links');
+  const infoPlan = document.getElementById('info-plan');
+  const infoStatus = document.getElementById('info-status');
+  const statusChips = document.getElementById('status-chips');
+  const tripDate = document.getElementById('trip-date');
+  const infoEditHint = document.getElementById('info-edit-hint');
+  const infoEditBtn = document.getElementById('info-edit-btn');
+
   const manageModal = document.getElementById('manage-modal');
   const manageBtn = document.getElementById('manage-btn');
   const closeManageBtn = document.getElementById('close-manage-btn');
@@ -237,10 +259,13 @@
     btn.setAttribute('aria-pressed', String(on));
   }
 
-  // ── Views (auth → onboarding → app) ───────────────────────────────
+  // ── Views (auth → onboarding/welcome → app) ───────────────────────
+  const welcomeView = document.getElementById('welcome-view');
+
   function showView(name) {
     authView.hidden = name !== 'auth';
     onboardView.hidden = name !== 'onboard';
+    welcomeView.hidden = name !== 'welcome';
     appView.hidden = name !== 'app';
     wheelTabs.hidden = name !== 'app';
     accountBar.hidden = name === 'auth';
@@ -254,10 +279,19 @@
     inviteCode = '';
     inviteBanner.hidden = true;
     if (!me.space.onboarded) {
+      justJoined = false; // the onboarding questions include the favourites picker
       document.getElementById('onboard-name').textContent = me.user.name;
       legacyBanner.hidden = !me.legacy_available;
       if (invite) onboardCode.value = invite;
+      loadFavCatalog();
       showView('onboard');
+      return;
+    }
+    if (justJoined) {
+      // Fresh member of an existing space: offer to star their own
+      // dream places before the wheel appears.
+      justJoined = false;
+      showWelcome();
       return;
     }
     showView('app');
@@ -313,7 +347,10 @@
     authSubmit.disabled = true;
     try {
       const body = { name: authName.value.trim(), password: authPassword.value };
-      if (authMode === 'register' && inviteCode) body.code = inviteCode;
+      if (authMode === 'register' && inviteCode) {
+        body.code = inviteCode;
+        justJoined = true; // landing in the partner's space → welcome screen
+      }
       const result = await rootApi(`/auth/${authMode === 'login' ? 'login' : 'register'}`, {
         method: 'POST',
         body: JSON.stringify(body),
@@ -336,9 +373,14 @@
   });
 
   // ── Onboarding ────────────────────────────────────────────────────
-  const onboardAnswers = { home: null, roam: 'europe', vibes: [], budget: 'mix' };
+  const onboardAnswers = {
+    home: null, roam: 'europe', vibes: [], budget: 'mix',
+    favorites: { holidays: [], citytrips: [] },
+  };
 
-  document.querySelectorAll('#onboard-view .ob-group').forEach((group) => {
+  // the favourites picker has its own handler — only wire up the
+  // single-answer question groups here
+  document.querySelectorAll('#onboard-view .ob-group[data-question]').forEach((group) => {
     const question = group.dataset.question;
     const multi = group.hasAttribute('data-multi');
     group.addEventListener('click', (e) => {
@@ -355,6 +397,49 @@
         group.querySelectorAll('.seg-btn').forEach((b) => setActive(b, b === btn));
       }
       onboardError.textContent = '';
+    });
+  });
+
+  // Favourites picker: every catalogue entry as a toggle chip, with a
+  // little search box because the full list is long.
+  const favSearch = document.getElementById('fav-search');
+  const favContainers = {
+    holidays: document.getElementById('fav-holidays'),
+    citytrips: document.getElementById('fav-citytrips'),
+  };
+  let favCatalogLoaded = false;
+
+  async function loadFavCatalog() {
+    if (favCatalogLoaded) return;
+    try {
+      const cat = await rootApi('/catalog');
+      for (const [wheel, container] of Object.entries(favContainers)) {
+        container.innerHTML = '';
+        for (const entry of cat[wheel] || []) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'seg-btn';
+          btn.dataset.name = entry.name.toLowerCase();
+          btn.textContent = `${entry.flag} ${entry.name}`;
+          btn.addEventListener('click', () => {
+            const set = new Set(onboardAnswers.favorites[wheel]);
+            set.has(entry.id) ? set.delete(entry.id) : set.add(entry.id);
+            onboardAnswers.favorites[wheel] = [...set];
+            setActive(btn, set.has(entry.id));
+          });
+          container.append(btn);
+        }
+      }
+      favCatalogLoaded = true;
+    } catch (err) {
+      console.error(err); // no picker then — onboarding works fine without it
+    }
+  }
+
+  favSearch.addEventListener('input', () => {
+    const q = favSearch.value.trim().toLowerCase();
+    document.querySelectorAll('#ob-favorites .seg-btn').forEach((btn) => {
+      btn.hidden = q !== '' && !btn.dataset.name.includes(q);
     });
   });
 
@@ -383,6 +468,7 @@
     try {
       me = await rootApi('/space/join', { method: 'POST', body: JSON.stringify({ code }) });
       if (shareModal.open) shareModal.close();
+      justJoined = true;
       applyMe();
     } catch (err) {
       errorEl.textContent = `⚠️ ${err.message}`;
@@ -404,6 +490,88 @@
   onboardJoinBtn.addEventListener('click', () => joinWithCode(onboardCode.value, onboardError));
   onboardCode.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); onboardJoinBtn.click(); }
+  });
+
+  // ── Welcome (just joined a partner's wheels) ──────────────────────
+  // The joiner inherits everything, so give them a voice too: pick the
+  // places they dream of and star them all in one go. Skipping is fine —
+  // the star buttons in the manage panel do the same thing later.
+  const welcomeSearch = document.getElementById('welcome-search');
+  const welcomeContainers = {
+    holidays: document.getElementById('welcome-holidays'),
+    citytrips: document.getElementById('welcome-citytrips'),
+  };
+  const welcomeSubmit = document.getElementById('welcome-submit');
+  const welcomeSkip = document.getElementById('welcome-skip');
+  const welcomeError = document.getElementById('welcome-error');
+  const welcomePicks = { holidays: new Set(), citytrips: new Set() };
+
+  async function showWelcome() {
+    document.getElementById('welcome-partner').textContent = partnerNames();
+    welcomeError.textContent = '';
+    welcomeSearch.value = '';
+    welcomePicks.holidays.clear();
+    welcomePicks.citytrips.clear();
+    try {
+      const [holidays, citytrips] = await Promise.all([
+        rootApi('/wheels/holidays/destinations'),
+        rootApi('/wheels/citytrips/destinations'),
+      ]);
+      const lists = { holidays, citytrips };
+      for (const [wheel, container] of Object.entries(welcomeContainers)) {
+        container.innerHTML = '';
+        for (const d of lists[wheel]) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'seg-btn';
+          btn.dataset.name = d.name.toLowerCase();
+          btn.textContent = `${starredByMe(d) ? '⭐ ' : ''}${d.flag} ${d.name}`;
+          btn.addEventListener('click', () => {
+            const set = welcomePicks[wheel];
+            set.has(d.id) ? set.delete(d.id) : set.add(d.id);
+            setActive(btn, set.has(d.id));
+          });
+          container.append(btn);
+        }
+      }
+    } catch (err) {
+      console.error(err); // can't load the lists — just go to the app
+      applyMe();
+      return;
+    }
+    showView('welcome');
+  }
+
+  welcomeSearch.addEventListener('input', () => {
+    const q = welcomeSearch.value.trim().toLowerCase();
+    document.querySelectorAll('#welcome-picker .seg-btn').forEach((btn) => {
+      btn.hidden = q !== '' && !btn.dataset.name.includes(q);
+    });
+  });
+
+  welcomeSkip.addEventListener('click', () => applyMe());
+
+  welcomeSubmit.addEventListener('click', async () => {
+    welcomeSubmit.disabled = true;
+    welcomeError.textContent = '';
+    try {
+      const requests = [];
+      for (const [wheel, set] of Object.entries(welcomePicks)) {
+        for (const id of set) {
+          // starring also re-enables — a dream place belongs on the wheel
+          requests.push(rootApi(`/wheels/${wheel}/destinations/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ starred: true, enabled: true }),
+          }));
+        }
+      }
+      await Promise.all(requests);
+      applyMe();
+    } catch (err) {
+      welcomeError.textContent = `⚠️ ${err.message}`;
+    } finally {
+      welcomeSubmit.disabled = false;
+    }
   });
 
   // ── Share modal ───────────────────────────────────────────────────
@@ -491,6 +659,60 @@
     }
   });
   closeAdminBtn.addEventListener('click', () => adminModal.close());
+
+  // ── Backup & restore ──────────────────────────────────────────────
+  const adminBackupBtn = document.getElementById('admin-backup-btn');
+  const adminRestoreBtn = document.getElementById('admin-restore-btn');
+  const adminRestoreFile = document.getElementById('admin-restore-file');
+  const backupStatus = document.getElementById('backup-status');
+
+  adminBackupBtn.addEventListener('click', async () => {
+    backupStatus.textContent = '';
+    try {
+      // fetch by hand: a plain download link can't carry the auth header
+      const res = await fetch('/api/admin/backup', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`Server said ${res.status}`);
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `wheel-of-wander-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      backupStatus.textContent = '✅ Backup downloaded — tuck it away somewhere safe.';
+    } catch (err) {
+      backupStatus.textContent = `⚠️ ${err.message}`;
+    }
+  });
+
+  adminRestoreBtn.addEventListener('click', () => {
+    adminRestoreFile.value = '';
+    adminRestoreFile.click();
+  });
+
+  adminRestoreFile.addEventListener('change', async () => {
+    const file = adminRestoreFile.files[0];
+    if (!file) return;
+    if (!confirm(`Restore "${file.name}"? This replaces ALL current data — accounts, wheels and history — with the backup's contents.`)) return;
+    backupStatus.textContent = '⏳ Restoring…';
+    try {
+      const text = await file.text();
+      JSON.parse(text); // catch garbage before it travels
+      const res = await rootApi('/admin/restore', { method: 'POST', body: text });
+      if (res.relogin) {
+        alert('Backup restored. Your account isn\'t in this backup, so please log in again.');
+        forceLogout();
+        return;
+      }
+      backupStatus.textContent = '✅ Backup restored.';
+      me = await rootApi('/me');
+      applyMe();
+      renderAdminUsers(await rootApi('/admin/users'));
+    } catch (err) {
+      backupStatus.textContent = `⚠️ ${err.message}`;
+    }
+  });
 
   async function adminAction(request) {
     adminError.textContent = '';
@@ -683,8 +905,27 @@
   let currentSegments = [];  // destinations currently on the wheel
   let pendingResult = null;
 
+  function starCount(d) {
+    const stars = (d.starred_by || []).length;
+    return stars || (d.favorite ? 1 : 0);
+  }
+
   function isFavorite(d) {
-    return !!d.favorite;
+    return starCount(d) > 0;
+  }
+
+  function segWeight(d) {
+    // every member's star widens the slice: 1 star → double, 2 → triple,
+    // 3+ (spaces of three or four) → quadruple, where it caps
+    return 1 + Math.min(starCount(d), 3);
+  }
+
+  function starIcon(d) {
+    return starCount(d) >= 2 ? '🌟' : (isFavorite(d) ? '⭐' : '☆');
+  }
+
+  function starredByMe(d) {
+    return (d.starred_by || []).includes(me.user.id);
   }
 
   function drawWheel() {
@@ -751,7 +992,7 @@
       ctx.fillStyle = 'rgba(20, 10, 40, 0.9)';
       const fontSize = Math.max(11, Math.min(20, (radius * seg) / 3.2, size * 0.032));
       ctx.font = `700 ${fontSize}px system-ui, sans-serif`;
-      let label = `${isFavorite(d) ? '⭐ ' : ''}${d.flag} ${d.name}`;
+      let label = `${isFavorite(d) ? `${starIcon(d)} ` : ''}${d.flag} ${d.name}`;
       const maxWidth = radius * 0.62;
       while (ctx.measureText(label).width > maxWidth && label.length > 6) {
         label = label.slice(0, -2).trimEnd() + '…';
@@ -767,10 +1008,10 @@
     ctx.fill();
   }
 
-  // Angular extent of each segment (before wheel rotation), sized by weight:
-  // favourites take twice the arc of a regular destination.
+  // Angular extent of each segment (before wheel rotation), sized by
+  // weight: one star doubles the arc, a star from both of you triples it.
   function segmentBounds() {
-    const weights = currentSegments.map((d) => (isFavorite(d) ? FAVORITE_WEIGHT : 1));
+    const weights = currentSegments.map(segWeight);
     const total = weights.reduce((a, b) => a + b, 0);
     const bounds = [];
     let acc = 0;
@@ -825,10 +1066,129 @@
     requestAnimationFrame(frame);
   }
 
+  // ── Destination info & links ──────────────────────────────────────
+  // Seeded destinations carry curated links (Wikivoyage/Wikipedia by
+  // default); for anything without links — older databases, home-made
+  // destinations, deleted history entries — build the same defaults
+  // from the name. Both wikis keep redirects for alternate spellings.
+  function fallbackLinks(name) {
+    const slug = encodeURIComponent(name.replace(/ /g, '_'));
+    return [
+      { label: 'Wikivoyage travel guide', url: `https://en.wikivoyage.org/wiki/${slug}` },
+      { label: 'Wikipedia', url: `https://en.wikipedia.org/wiki/${slug}` },
+    ];
+  }
+
+  function destLinks(d) {
+    return (d.links && d.links.length) ? d.links : fallbackLinks(d.name);
+  }
+
+  function renderLinkList(el, links) {
+    el.innerHTML = '';
+    for (const link of links) {
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.href = link.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = link.label || link.url;
+      li.append(a);
+      el.append(li);
+    }
+  }
+
+  // Booking-search links built from the name — the tabs you actually
+  // open once a pick is made. Zero data to maintain.
+  function planLinks(name) {
+    return [
+      { label: '✈️ Flights', url: `https://www.google.com/travel/flights?q=${encodeURIComponent(`flights to ${name}`)}` },
+      { label: '🛏️ Stays', url: `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(name)}` },
+    ];
+  }
+
+  // The info view: opened from a spin history entry (with trip status
+  // controls) or from a destination in the manage list (without them).
+  let infoEntry = null; // the history entry being viewed, if any
+
+  function showInfoModal(d, historyItem) {
+    infoEntry = historyItem || null;
+    const name = d ? d.name : historyItem.name;
+    infoFlag.textContent = d ? d.flag : historyItem.flag;
+    infoName.textContent = name;
+    infoTags.textContent = d ? describe(d) : 'No longer on your destination list';
+    const notes = d && d.notes;
+    infoNotes.hidden = !notes;
+    infoNotes.textContent = notes || '';
+    renderLinkList(infoLinks, d ? destLinks(d) : fallbackLinks(name));
+    renderLinkList(infoPlan, planLinks(name));
+    infoStatus.hidden = !infoEntry;
+    if (infoEntry) syncStatusControls();
+    infoEditHint.hidden = !d;
+    infoEditBtn.hidden = !d;
+    infoEditBtn.onclick = () => {
+      infoModal.close();
+      if (!manageModal.open) manageBtn.click();
+      enterEditMode(d);
+    };
+    infoModal.showModal();
+  }
+
+  // Newer history entries carry the destination id; older ones only a
+  // name — match what we can.
+  function openDestInfo(item) {
+    const d = state.destinations.find((x) => x.id === item.dest_id)
+      || state.destinations.find((x) => x.name === item.name)
+      || null;
+    showInfoModal(d, item);
+  }
+
+  closeInfoBtn.addEventListener('click', () => infoModal.close());
+  infoModal.addEventListener('close', () => { infoEntry = null; });
+
+  // ── Trip status (booked / been there) on a history entry ─────────
+  function syncStatusControls() {
+    statusChips.querySelectorAll('.seg-btn').forEach((btn) => {
+      setActive(btn, (infoEntry.status || '') === btn.dataset.status);
+    });
+    tripDate.value = infoEntry.trip_date || '';
+  }
+
+  async function updateHistoryEntry(changes) {
+    const res = await api(`/history/${infoEntry.id}`, {
+      method: 'PUT',
+      body: JSON.stringify(changes),
+    });
+    state.history = res.history;
+    const updated = state.history.find((e) => e.id === infoEntry.id);
+    if (updated) infoEntry = updated;
+    renderHistory();
+    if (res.destination) {
+      // marking "been there" took it off the wheel
+      const i = state.destinations.findIndex((d) => d.id === res.destination.id);
+      if (i !== -1) state.destinations[i] = res.destination;
+      refresh();
+    }
+    syncStatusControls();
+  }
+
+  statusChips.addEventListener('click', (e) => {
+    const btn = e.target.closest('.seg-btn');
+    if (!btn || !infoEntry) return;
+    updateHistoryEntry({ status: btn.dataset.status }).catch((err) => {
+      console.error(err);
+      wheelHint.textContent = `⚠️ ${err.message}`;
+    });
+  });
+
+  tripDate.addEventListener('change', () => {
+    if (!infoEntry) return;
+    updateHistoryEntry({ trip_date: tripDate.value }).catch(console.error);
+  });
+
   // ── Result modal ──────────────────────────────────────────────────
   function describe(d) {
     const parts = [
-      isFavorite(d) ? '⭐ favourite' : '',
+      starCount(d) >= 2 ? `🌟 starred by ${starCount(d)} of you` : (isFavorite(d) ? '⭐ favourite' : ''),
       BUDGET_LABELS[d.budget],
       DISTANCE_LABELS[d.distance],
       d.vibes.map((v) => VIBE_LABELS[v]).join(' · '),
@@ -841,6 +1201,9 @@
     resultFlag.textContent = destination.flag;
     resultName.textContent = destination.name;
     resultTags.textContent = describe(destination);
+    resultNotes.hidden = !destination.notes;
+    resultNotes.textContent = destination.notes || '';
+    renderLinkList(resultLinks, [...destLinks(destination), ...planLinks(destination.name)]);
     vetoBtn.disabled = state.round.my_veto_used;
     vetoNote.textContent = state.round.my_veto_used
       ? 'You\'ve already used your veto this round — the wheel has spoken!'
@@ -871,7 +1234,7 @@
         renderHistory();
         wheelHint.textContent = `${result.flag} ${result.name} it is — time to book! 🧳`;
       } else {
-        wheelHint.textContent = `Waiting for ${partnerNames()} to okay ${result.flag} ${result.name} — they can still veto ✋`;
+        wheelHint.textContent = `Waiting for ${waitingNames(res.round.pending)} to okay ${result.flag} ${result.name} — they can still veto ✋`;
       }
     } catch (err) {
       console.error(err);
@@ -903,13 +1266,23 @@
     }
   });
 
-  // ── Pending pick banner (the partner spun — accept or veto) ──────
+  // ── Pending pick banner (someone spun — accept or veto) ──────────
+  // With three or four people on the wheels a pick stays pending until
+  // everyone who can still veto has okayed it; waiting_names says who's
+  // still due.
+  function waitingNames(p) {
+    return (p.waiting_names || []).join(' & ') || partnerNames();
+  }
+
   function renderPending() {
     const p = state.round.pending;
     pendingBanner.hidden = !p;
     if (!p) return;
     if (p.mine) {
-      pendingText.textContent = `⏳ You picked ${p.flag} ${p.name} — waiting for ${partnerNames()} to give it a thumbs-up.`;
+      pendingText.textContent = `⏳ You picked ${p.flag} ${p.name} — waiting for ${waitingNames(p)} to give it a thumbs-up.`;
+      pendingActions.hidden = true;
+    } else if (p.i_confirmed) {
+      pendingText.textContent = `👍 You're in for ${p.flag} ${p.name} — waiting for ${waitingNames(p)}.`;
       pendingActions.hidden = true;
     } else {
       pendingText.textContent = `🎡 ${p.by_name} spun ${p.flag} ${p.name}! Are you in — or is this your veto?`;
@@ -925,9 +1298,13 @@
     if (!p) return;
     try {
       const res = await api('/round/confirm', { method: 'POST' });
-      state.history = res.history;
-      renderHistory();
-      wheelHint.textContent = `${p.flag} ${p.name} it is — time to book! 🧳`;
+      if (res.final) {
+        state.history = res.history;
+        renderHistory();
+        wheelHint.textContent = `${p.flag} ${p.name} it is — time to book! 🧳`;
+      } else {
+        wheelHint.textContent = `You're in! Still waiting for ${waitingNames(res.round.pending)} to okay ${p.flag} ${p.name}.`;
+      }
       applyRound(res.round);
     } catch (err) {
       console.error(err);
@@ -959,6 +1336,10 @@
       if (JSON.stringify(history) !== JSON.stringify(state.history)) {
         state.history = history;
         renderHistory();
+        // a history change can also change the wheel: the partner may
+        // have starred, edited, or marked a destination "been there"
+        state.destinations = await api('/destinations');
+        refresh();
       }
       applyRound(round);
     } catch { /* transient — the next poll retries */ }
@@ -1084,20 +1465,25 @@
       const star = document.createElement('button');
       star.type = 'button';
       star.className = 'star-btn';
-      star.title = 'Favourites get a double chance on the wheel';
-      star.textContent = d.favorite ? '⭐' : '☆';
-      star.classList.toggle('starred', d.favorite);
+      star.title = 'Star it (your star) — every member\'s star widens this slice of the wheel';
+      const paintStar = () => {
+        star.textContent = starIcon(d);
+        star.classList.toggle('starred', isFavorite(d));
+      };
+      paintStar();
       star.addEventListener('click', async () => {
-        const updated = await patchDestination(d.id, { favorite: !d.favorite }).catch(console.error);
+        const updated = await patchDestination(d.id, { starred: !starredByMe(d) }).catch(console.error);
         if (!updated) return;
-        d.favorite = updated.favorite;
-        star.textContent = d.favorite ? '⭐' : '☆';
-        star.classList.toggle('starred', d.favorite);
+        Object.assign(d, updated);
+        paintStar();
       });
 
-      const name = document.createElement('span');
+      const name = document.createElement('button');
+      name.type = 'button';
       name.className = 'dest-name';
+      name.title = 'Info & links about this place';
       name.textContent = `${d.flag} ${d.name}`;
+      name.addEventListener('click', () => showInfoModal(d, null));
 
       const meta = document.createElement('span');
       meta.className = 'dest-meta';
@@ -1143,6 +1529,49 @@
     });
   }
 
+  // Links editor: a row of label + URL inputs per link
+  const addNotes = document.getElementById('add-notes');
+  const linkRows = document.getElementById('link-rows');
+  const addLinkBtn = document.getElementById('add-link-btn');
+
+  function addLinkRow(link = { label: '', url: '' }) {
+    const row = document.createElement('div');
+    row.className = 'link-row';
+    const label = document.createElement('input');
+    label.type = 'text';
+    label.className = 'link-label';
+    label.placeholder = 'Label, e.g. Our hotel';
+    label.maxLength = 60;
+    label.value = link.label || '';
+    const url = document.createElement('input');
+    url.type = 'text';
+    url.className = 'link-url';
+    url.placeholder = 'https://…';
+    url.maxLength = 300;
+    url.value = link.url || '';
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'del-btn';
+    del.title = 'Remove this link';
+    del.textContent = '✕';
+    del.addEventListener('click', () => row.remove());
+    row.append(label, url, del);
+    linkRows.append(row);
+    return row;
+  }
+
+  addLinkBtn.addEventListener('click', () => {
+    addLinkRow().querySelector('.link-url').focus();
+  });
+
+  function collectLinks() {
+    return Array.from(linkRows.querySelectorAll('.link-row')).map((row) => {
+      let url = row.querySelector('.link-url').value.trim();
+      if (url && !/^https?:\/\//i.test(url)) url = `https://${url}`;
+      return { label: row.querySelector('.link-label').value.trim(), url };
+    }).filter((link) => link.url);
+  }
+
   function enterEditMode(d) {
     state.editingId = d.id;
     formTitle.textContent = `Edit ${d.name}`;
@@ -1155,6 +1584,9 @@
     setCheckedValues('add-vibes', d.vibes);
     setCheckedValues('add-seasons', d.seasons);
     setCheckedValues('add-party', d.party);
+    addNotes.value = d.notes || '';
+    linkRows.innerHTML = '';
+    (d.links || []).forEach(addLinkRow);
     addForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
     document.getElementById('add-name').focus();
   }
@@ -1165,6 +1597,7 @@
     formSubmit.textContent = '➕ Add destination';
     cancelEditBtn.hidden = true;
     addForm.reset();
+    linkRows.innerHTML = '';
   }
 
   cancelEditBtn.addEventListener('click', exitEditMode);
@@ -1181,6 +1614,8 @@
       vibes: checkedValues('add-vibes'),
       seasons: checkedValues('add-seasons'),
       party: checkedValues('add-party'),
+      notes: addNotes.value.trim(),
+      links: collectLinks(),
     };
     try {
       if (state.editingId) {
@@ -1210,12 +1645,22 @@
     }
     for (const item of state.history) {
       const li = document.createElement('li');
-      const name = document.createElement('span');
+      const name = document.createElement('button');
+      name.type = 'button';
+      name.className = 'history-name';
+      name.title = 'Info, links & trip status for this pick';
       name.textContent = `${item.flag} ${item.name}`;
+      name.addEventListener('click', () => openDestInfo(item));
       const when = document.createElement('span');
       when.className = 'when';
-      when.textContent = new Date(item.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-      if (item.by) when.title = `Picked by ${item.by}`;
+      const badge = item.status === 'booked' ? '📅 ' : (item.status === 'visited' ? '✅ ' : '');
+      when.textContent = badge + new Date(item.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+      const titleBits = [];
+      if (item.by) titleBits.push(`Picked by ${item.by}`);
+      if (item.status === 'booked') titleBits.push('booked');
+      if (item.status === 'visited') titleBits.push('been there');
+      if (item.trip_date) titleBits.push(`trip: ${item.trip_date}`);
+      if (titleBits.length) when.title = titleBits.join(' · ');
       li.append(name, when);
       historyList.append(li);
     }
@@ -1241,7 +1686,7 @@
     matchCount.textContent = n === 0
       ? 'No matches — loosen a filter or two'
       : (n === 1 ? '1 destination on the wheel' : `${n} destinations on the wheel`) +
-        (favs > 0 ? ` · ⭐ ${favs} favourite${favs === 1 ? '' : 's'} with double chance` : '');
+        (favs > 0 ? ` · ⭐ ${favs} favourite${favs === 1 ? '' : 's'} with extra chance` : '');
     spinBtn.disabled = n === 0 || spinning;
     drawWheel();
   }
