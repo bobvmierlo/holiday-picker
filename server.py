@@ -544,11 +544,14 @@ def store_subscription(db, user, sub):
     user["push_subs"] = subs[-MAX_PUSH_SUBS:]
 
 
-def push_to_users(users, title, body, wheel):
+def push_to_users(users, title, body, wheel, tag=None):
     """Queue one notification to every device of `users`. Delivery runs
     on a background thread: a round-trip to Apple's or Google's relay
     can take seconds, and the member who spun is still waiting for
-    their HTTP response."""
+    their HTTP response. Notifications sharing a tag replace each other
+    on the device; the default groups per wheel, so round events
+    coalesce — pass a distinct tag for news that shouldn't overwrite an
+    actionable alert (like a pick waiting for a thumbs-up)."""
     if webpush is None or vapid_public_key() is None:
         return  # the call also guarantees the key file exists before delivery reads it
     targets = [
@@ -560,7 +563,7 @@ def push_to_users(users, title, body, wheel):
     payload = json.dumps({
         "title": title,
         "body": body,
-        "tag": wheel["id"],  # per-wheel tag: a newer alert replaces the older one
+        "tag": tag or wheel["id"],
         "url": f"/#{wheel['id']}",
     }, ensure_ascii=False)
     threading.Thread(target=_deliver_pushes, args=(targets, payload), daemon=True).start()
@@ -1294,7 +1297,8 @@ def list_destinations(wheel_id):
 def create_destination(wheel_id):
     with _lock:
         db = load_db()
-        wheel = get_wheel(db, current_user(db), wheel_id)
+        user = current_user(db)
+        wheel = get_wheel(db, user, wheel_id)
         try:
             dest = clean_destination(
                 request.get_json(force=True, silent=True), travel=is_travel(wheel)
@@ -1303,6 +1307,14 @@ def create_destination(wheel_id):
             abort(400, description=str(err))
         wheel["destinations"].append(dest)
         save_db(db)
+        label = " ".join(part for part in (dest.get("flag", ""), dest["name"]) if part)
+        push_to_users(
+            [u for u in wheel_member_users(db, wheel["id"]) if u["id"] != user["id"]],
+            f"➕ {user['name']} added {label}",
+            f"Fresh on {wheel['name']} — worth a star? ⭐",
+            wheel,
+            tag=f"{wheel['id']}-add",  # don't overwrite a spin waiting for a thumbs-up
+        )
     return jsonify(dest), 201
 
 
