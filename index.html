@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Wheel of Wander · Holiday Picker for Two</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌍</text></svg>">
+  <title>Wheel of Choice · Spin away your indecision</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎡</text></svg>">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -13,15 +13,12 @@
     <div class="account-bar" id="account-bar" hidden>
       <span class="account-name" id="account-name"></span>
       <button type="button" class="btn btn-ghost btn-small" id="admin-btn" hidden>🛠️ Admin</button>
-      <button type="button" class="btn btn-ghost btn-small" id="share-btn">🔗 Share</button>
+      <button type="button" class="btn btn-ghost btn-small" id="share-btn" hidden>🔗 Share</button>
       <button type="button" class="btn btn-ghost btn-small" id="logout-btn">Log out</button>
     </div>
-    <h1>🌍 Wheel of Wander</h1>
-    <p class="tagline">Can't agree on the next trip? Let the wheel decide.</p>
-    <nav class="wheel-tabs" id="wheel-tabs" aria-label="Wheel selection" hidden>
-      <button type="button" class="tab active" data-wheel="holidays">🌍 Holidays</button>
-      <button type="button" class="tab" data-wheel="citytrips">🏙️ City trips</button>
-    </nav>
+    <h1>🎡 Wheel of Choice</h1>
+    <p class="tagline">Can't agree on the next trip — or where to eat tonight? Let the wheel decide.</p>
+    <nav class="wheel-tabs" id="wheel-tabs" aria-label="Wheel selection" hidden></nav>
   </header>
 
   <!-- ── Log in / register ──────────────────────────────────────────── -->
@@ -46,18 +43,18 @@
       </form>
       <p class="gate-hint" id="auth-hint">
         New here? Creating an account takes ten seconds — just a name and a password.
-        Your destinations, favourites and preferences are saved to it, and you can
-        share everything with your partner.
+        Your wheels, favourites and preferences are saved to it, and every wheel can be
+        shared with exactly the people you want on it.
       </p>
     </div>
   </section>
 
-  <!-- ── Onboarding ─────────────────────────────────────────────────── -->
+  <!-- ── Create / join a wheel ──────────────────────────────────────── -->
   <section class="gate" id="onboard-view" hidden>
     <div class="gate-card onboard-card">
-      <h2>Hi <span id="onboard-name"></span> — let's build your wheels 🎡</h2>
-      <p class="gate-sub">Four quick questions and we'll fill both wheels with destinations
-        that make sense for you. You can tweak everything later.</p>
+      <h2 id="onboard-title">Let's build a wheel 🎡</h2>
+      <p class="gate-sub">Every wheel is its own little world with its own share code —
+        make as many as you like and share each one with exactly the right people.</p>
 
       <div class="legacy-banner" id="legacy-banner" hidden>
         <p>📦 We found the destinations, favourites and history this server used
@@ -66,87 +63,105 @@
         <div class="gate-divider">or start fresh below</div>
       </div>
 
-      <fieldset class="ob-group" data-question="home">
-        <legend>🏠 Where's home?</legend>
+      <fieldset class="ob-group" id="ob-type">
+        <legend>🎡 What should this wheel pick?</legend>
         <div class="segmented">
-          <button type="button" class="seg-btn" data-value="northwest">Benelux, Germany &amp; N. France</button>
-          <button type="button" class="seg-btn" data-value="british">UK &amp; Ireland</button>
-          <button type="button" class="seg-btn" data-value="nordic">The Nordics</button>
-          <button type="button" class="seg-btn" data-value="south">Southern Europe</button>
-          <button type="button" class="seg-btn" data-value="central">Central Europe</button>
+          <button type="button" class="seg-btn active" data-value="holidays">🌍 Holidays</button>
+          <button type="button" class="seg-btn" data-value="citytrips">🏙️ City trips</button>
+          <button type="button" class="seg-btn" data-value="restaurants">🍽️ Restaurants</button>
         </div>
       </fieldset>
 
-      <fieldset class="ob-group" data-question="roam">
-        <legend>✈️ How far do you want to roam?</legend>
-        <div class="segmented">
-          <button type="button" class="seg-btn" data-value="close">🚗 Keep it close — car &amp; train</button>
-          <button type="button" class="seg-btn active" data-value="europe">✈️ All of Europe</button>
-          <button type="button" class="seg-btn" data-value="anywhere">🌏 Anywhere on the planet</button>
-        </div>
+      <fieldset class="ob-group">
+        <legend>🏷️ Name your wheel <small>optional</small></legend>
+        <input type="text" id="wheel-name" class="fav-search" maxlength="40" placeholder="e.g. Holidays" autocomplete="off">
       </fieldset>
 
-      <fieldset class="ob-group" data-question="vibes" data-multi>
-        <legend>💛 What do you love on a trip? <small>pick any — these become your starting favourites</small></legend>
-        <div class="segmented">
-          <button type="button" class="seg-btn" data-value="nature">🌲 Nature</button>
-          <button type="button" class="seg-btn" data-value="culture">🏛️ Culture &amp; museums</button>
-          <button type="button" class="seg-btn" data-value="food">🍽️ Food</button>
-          <button type="button" class="seg-btn" data-value="beach">🏖️ Beach</button>
-          <button type="button" class="seg-btn" data-value="nightlife">🌃 Nightlife</button>
-          <button type="button" class="seg-btn" data-value="adventure">🧗 Adventure</button>
-          <button type="button" class="seg-btn" data-value="wellness">💆 Wellness</button>
-          <button type="button" class="seg-btn" data-value="winter">⛷️ Snow</button>
-        </div>
-      </fieldset>
+      <div id="travel-questions">
+        <fieldset class="ob-group" data-question="home">
+          <legend>🏠 Where's home?</legend>
+          <div class="segmented">
+            <button type="button" class="seg-btn" data-value="northwest">Benelux, Germany &amp; N. France</button>
+            <button type="button" class="seg-btn" data-value="british">UK &amp; Ireland</button>
+            <button type="button" class="seg-btn" data-value="nordic">The Nordics</button>
+            <button type="button" class="seg-btn" data-value="south">Southern Europe</button>
+            <button type="button" class="seg-btn" data-value="central">Central Europe</button>
+          </div>
+        </fieldset>
 
-      <fieldset class="ob-group" data-question="budget">
-        <legend>💶 What's your budget style?</legend>
-        <div class="segmented">
-          <button type="button" class="seg-btn" data-value="low">💶 Budget-friendly</button>
-          <button type="button" class="seg-btn" data-value="mid">💶💶 Mid-range</button>
-          <button type="button" class="seg-btn" data-value="high">💶💶💶 Treat ourselves</button>
-          <button type="button" class="seg-btn active" data-value="mix">🎲 Bit of everything</button>
-        </div>
-      </fieldset>
+        <fieldset class="ob-group" data-question="roam">
+          <legend>✈️ How far do you want to roam?</legend>
+          <div class="segmented">
+            <button type="button" class="seg-btn" data-value="close">🚗 Keep it close — car &amp; train</button>
+            <button type="button" class="seg-btn active" data-value="europe">✈️ All of Europe</button>
+            <button type="button" class="seg-btn" data-value="anywhere">🌏 Anywhere on the planet</button>
+          </div>
+        </fieldset>
 
-      <fieldset class="ob-group" id="ob-favorites">
-        <legend>⭐ Already dreaming of somewhere? <small>optional — your picks start as starred favourites, even beyond your roam range</small></legend>
-        <input type="text" id="fav-search" class="fav-search" placeholder="🔍 Type to filter the list…" autocomplete="off">
-        <div class="fav-picker">
-          <p class="fav-group-label">🌍 Countries</p>
-          <div class="segmented" id="fav-holidays"></div>
-          <p class="fav-group-label">🏙️ Cities</p>
-          <div class="segmented" id="fav-citytrips"></div>
-        </div>
-      </fieldset>
+        <fieldset class="ob-group" data-question="vibes" data-multi>
+          <legend>💛 What do you love on a trip? <small>pick any — these become your starting favourites</small></legend>
+          <div class="segmented">
+            <button type="button" class="seg-btn" data-value="nature">🌲 Nature</button>
+            <button type="button" class="seg-btn" data-value="culture">🏛️ Culture &amp; museums</button>
+            <button type="button" class="seg-btn" data-value="food">🍽️ Food</button>
+            <button type="button" class="seg-btn" data-value="beach">🏖️ Beach</button>
+            <button type="button" class="seg-btn" data-value="nightlife">🌃 Nightlife</button>
+            <button type="button" class="seg-btn" data-value="adventure">🧗 Adventure</button>
+            <button type="button" class="seg-btn" data-value="wellness">💆 Wellness</button>
+            <button type="button" class="seg-btn" data-value="winter">⛷️ Snow</button>
+          </div>
+        </fieldset>
 
-      <button type="button" class="btn btn-primary" id="onboard-submit">Build our wheels 🎡</button>
+        <fieldset class="ob-group" data-question="budget">
+          <legend>💶 What's your budget style?</legend>
+          <div class="segmented">
+            <button type="button" class="seg-btn" data-value="low">💶 Budget-friendly</button>
+            <button type="button" class="seg-btn" data-value="mid">💶💶 Mid-range</button>
+            <button type="button" class="seg-btn" data-value="high">💶💶💶 Treat ourselves</button>
+            <button type="button" class="seg-btn active" data-value="mix">🎲 Bit of everything</button>
+          </div>
+        </fieldset>
+
+        <fieldset class="ob-group" id="ob-favorites">
+          <legend>⭐ Already dreaming of somewhere? <small>optional — your picks start as starred favourites, even beyond your roam range</small></legend>
+          <input type="text" id="fav-search" class="fav-search" placeholder="🔍 Type to filter the list…" autocomplete="off">
+          <div class="fav-picker">
+            <div class="segmented" id="fav-list"></div>
+          </div>
+        </fieldset>
+      </div>
+
+      <p class="gate-hint" id="restaurant-hint" hidden>🍽️ A restaurant wheel starts empty:
+        you add your own favourite spots by hand, and there are no vetoes — where it
+        lands is where you eat.</p>
+
+      <button type="button" class="btn btn-primary" id="onboard-submit">Create this wheel 🎡</button>
       <p class="form-error" id="onboard-error" role="alert"></p>
 
       <div class="gate-divider">or</div>
-      <p class="gate-hint">Did your partner already set things up? Skip the questions and
-        join their wheels with the share code:</p>
+      <p class="gate-hint">Got a share code? Each code belongs to one wheel — joining
+        adds that wheel to your list, next to any wheels you already have.</p>
       <div class="join-row">
         <input type="text" id="onboard-code" placeholder="Share code, e.g. ABCD-2345" autocomplete="off">
-        <button type="button" class="btn btn-ghost" id="onboard-join-btn">Join them</button>
+        <button type="button" class="btn btn-ghost" id="onboard-join-btn">Join it</button>
       </div>
+      <p class="share-leave-row" id="onboard-back-row" hidden>
+        <button type="button" class="linklike" id="onboard-back">← Back to my wheels</button>
+      </p>
     </div>
   </section>
 
-  <!-- ── Welcome (just joined a partner's wheels) ───────────────────── -->
+  <!-- ── Welcome (just joined someone's wheel) ──────────────────────── -->
   <section class="gate" id="welcome-view" hidden>
     <div class="gate-card onboard-card">
       <h2>Welcome aboard 🎉</h2>
-      <p class="gate-sub">You've joined <span id="welcome-partner"></span>'s wheels.
-        Now star the places <em>you</em> dream of — starred places get a bigger slice
-        of the wheel, and every extra star from a travel mate 🌟 widens it further.</p>
+      <p class="gate-sub">You've joined <span id="welcome-partner"></span>'s wheel
+        <strong id="welcome-wheel"></strong>. Now star the entries <em>you</em> dream of —
+        starred entries get a bigger slice of the wheel, and every extra star from
+        another member 🌟 widens it further.</p>
       <input type="text" id="welcome-search" class="fav-search" placeholder="🔍 Type to filter the list…" autocomplete="off">
       <div class="fav-picker" id="welcome-picker">
-        <p class="fav-group-label">🌍 Holidays</p>
-        <div class="segmented" id="welcome-holidays"></div>
-        <p class="fav-group-label">🏙️ City trips</p>
-        <div class="segmented" id="welcome-citytrips"></div>
+        <div class="segmented" id="welcome-list"></div>
       </div>
       <button type="button" class="btn btn-primary" id="welcome-submit">Star my picks ⭐</button>
       <p class="form-error" id="welcome-error" role="alert"></p>
@@ -159,8 +174,8 @@
   <main class="layout" id="app-view" hidden>
 
     <!-- ── Filters ──────────────────────────────────────────────────── -->
-    <aside class="panel filters-panel" aria-label="Trip preferences">
-      <h2>Trip preferences</h2>
+    <aside class="panel filters-panel" aria-label="Wheel preferences">
+      <h2 id="filters-title">Trip preferences</h2>
 
       <fieldset class="filter-group" data-filter="budget">
         <legend>💶 Budget</legend>
@@ -217,11 +232,11 @@
       </fieldset>
 
       <p class="match-count" id="match-count"></p>
-      <button type="button" class="btn btn-ghost" id="manage-btn">⚙️ Manage destinations</button>
+      <button type="button" class="btn btn-ghost" id="manage-btn">⚙️ Manage the wheel</button>
     </aside>
 
     <!-- ── Wheel ────────────────────────────────────────────────────── -->
-    <section class="wheel-section" aria-label="Destination wheel">
+    <section class="wheel-section" aria-label="The wheel">
       <div class="pending-banner" id="pending-banner" hidden>
         <p class="pending-text" id="pending-text"></p>
         <div class="pending-actions" id="pending-actions">
@@ -249,7 +264,7 @@
   <!-- ── Result modal ───────────────────────────────────────────────── -->
   <dialog id="result-modal" class="modal result-modal">
     <canvas id="confetti" class="confetti" width="480" height="360" aria-hidden="true"></canvas>
-    <p class="result-kicker">Your next holiday is…</p>
+    <p class="result-kicker" id="result-kicker">Your next holiday is…</p>
     <p class="result-flag" id="result-flag"></p>
     <h2 class="result-name" id="result-name"></h2>
     <p class="result-tags" id="result-tags"></p>
@@ -262,7 +277,7 @@
     <p class="veto-note" id="veto-note">Each of you gets one veto per round — use it wisely.</p>
   </dialog>
 
-  <!-- ── Destination info modal ─────────────────────────────────────── -->
+  <!-- ── Entry info modal ───────────────────────────────────────────── -->
   <dialog id="info-modal" class="modal info-modal">
     <div class="manage-header">
       <h2>📍 About this place</h2>
@@ -284,45 +299,38 @@
         <button type="button" class="seg-btn" data-status="visited">✅ Been there</button>
       </div>
       <label class="trip-date-row">Trip date: <input type="date" id="trip-date"></label>
-      <p class="manage-hint">Marking a pick “✅ Been there” takes the destination off the wheel
-        (re-tick it in ⚙️ Manage destinations to bring it back).</p>
+      <p class="manage-hint">Marking a pick “✅ Been there” takes it off the wheel
+        (re-tick it in ⚙️ Manage the wheel to bring it back).</p>
     </div>
     <p class="manage-hint" id="info-edit-hint">Add your own notes and links — hotel finds, blog posts, that one
-      restaurant you have to try.</p>
+      dish you have to try.</p>
     <button type="button" class="btn btn-ghost" id="info-edit-btn">✏️ Edit notes &amp; links</button>
   </dialog>
 
   <!-- ── Share modal ────────────────────────────────────────────────── -->
   <dialog id="share-modal" class="modal share-modal">
     <div class="manage-header">
-      <h2>🔗 Share your wheels</h2>
+      <h2>🔗 Share <span id="share-wheel-name"></span></h2>
       <button type="button" class="btn btn-ghost" id="close-share-btn">Close</button>
     </div>
-    <p class="manage-hint">Give your partner — or the whole travel group, up to three or
-      four works great — this code. Everyone who creates an account and joins with it
-      spins the same wheels: destinations, favourites and history stay in sync, while
-      each of you keeps their own filters.</p>
+    <p class="manage-hint">This code belongs to <strong>this wheel only</strong> — your other
+      wheels stay private. Give it to your partner or the whole group: everyone who joins
+      with it spins this same wheel, with its entries, favourites and history in sync,
+      while each of you keeps their own filters.</p>
     <div class="share-code-row">
       <code class="share-code" id="share-code"></code>
       <button type="button" class="btn btn-ghost" id="copy-code-btn">📋 Copy</button>
     </div>
     <p class="manage-hint">Even easier: send them this invite link. Creating an account
-      through it joins your wheels automatically.</p>
+      through it joins this wheel automatically.</p>
     <div class="share-code-row">
       <code class="share-code share-link" id="share-link"></code>
       <button type="button" class="btn btn-ghost" id="copy-link-btn">📋 Copy</button>
     </div>
     <p class="share-members" id="share-members"></p>
-
-    <h3>Join someone else's wheels</h3>
-    <p class="manage-hint">Enter their share code below. You'll leave your current wheels behind.</p>
-    <div class="join-row">
-      <input type="text" id="join-code" placeholder="Share code, e.g. ABCD-2345" autocomplete="off">
-      <button type="button" class="btn btn-ghost" id="join-btn">Join</button>
-    </div>
     <p class="form-error" id="share-error" role="alert"></p>
     <p class="share-leave-row">
-      <button type="button" class="linklike" id="leave-btn">Start over with fresh wheels…</button>
+      <button type="button" class="linklike" id="leave-btn">Leave this wheel…</button>
     </p>
   </dialog>
 
@@ -333,8 +341,8 @@
       <button type="button" class="btn btn-ghost" id="close-admin-btn">Close</button>
     </div>
     <p class="manage-hint">Every account on this server. Hand out admin rights,
-      pull someone out of shared wheels (they keep their account and get fresh
-      wheels of their own), or delete an account for good.</p>
+      pull someone out of all the wheels they share with others (they keep their
+      account and any wheels of their own), or delete an account for good.</p>
     <ul id="admin-user-list" class="dest-list admin-list"></ul>
     <h3>Backup</h3>
     <p class="manage-hint">Everything — accounts, wheels, history — lives in one
@@ -355,10 +363,10 @@
     <p class="form-error" id="admin-error" role="alert"></p>
   </dialog>
 
-  <!-- ── Manage destinations modal ──────────────────────────────────── -->
+  <!-- ── Manage wheel modal ─────────────────────────────────────────── -->
   <dialog id="manage-modal" class="modal manage-modal">
     <div class="manage-header">
-      <h2>⚙️ Manage destinations</h2>
+      <h2 id="manage-title">⚙️ Manage the wheel</h2>
       <button type="button" class="btn btn-ghost" id="close-manage-btn">Close</button>
     </div>
 
@@ -367,18 +375,18 @@
       <div class="add-grid">
         <input type="text" id="add-name" placeholder="Destination name" required maxlength="60">
         <input type="text" id="add-flag" placeholder="Emoji, e.g. 🏝️" maxlength="28">
-        <select id="add-budget">
+        <select id="add-budget" class="travel-only">
           <option value="low">Low budget</option>
           <option value="mid" selected>Mid budget</option>
           <option value="high">High budget</option>
         </select>
-        <select id="add-distance">
+        <select id="add-distance" class="travel-only">
           <option value="regional">Regional</option>
           <option value="europe" selected>Europe</option>
           <option value="longhaul">Long-haul</option>
         </select>
       </div>
-      <div class="add-checks" id="add-vibes">
+      <div class="add-checks travel-only" id="add-vibes">
         <span class="checks-label">Vibes:</span>
         <label><input type="checkbox" value="nature" checked> Nature</label>
         <label><input type="checkbox" value="culture" checked> Culture</label>
@@ -389,40 +397,41 @@
         <label><input type="checkbox" value="wellness"> Wellness</label>
         <label><input type="checkbox" value="winter"> Snow</label>
       </div>
-      <div class="add-checks" id="add-seasons">
+      <div class="add-checks travel-only" id="add-seasons">
         <span class="checks-label">Best in:</span>
         <label><input type="checkbox" value="spring" checked> Spring</label>
         <label><input type="checkbox" value="summer" checked> Summer</label>
         <label><input type="checkbox" value="autumn" checked> Autumn</label>
         <label><input type="checkbox" value="winter" checked> Winter</label>
       </div>
-      <div class="add-checks" id="add-party">
+      <div class="add-checks travel-only" id="add-party">
         <span class="checks-label">Suits:</span>
         <label><input type="checkbox" value="couple" checked> Just us two</label>
         <label><input type="checkbox" value="group" checked> Friends / family</label>
       </div>
       <textarea id="add-notes" rows="2" maxlength="1000"
-                placeholder="Notes — why this place, best time to go, hotel ideas…"></textarea>
+                placeholder="Notes — why this place, best time to go, what to order…"></textarea>
       <div class="link-editor">
         <span class="checks-label">Links:</span>
         <div class="link-rows" id="link-rows"></div>
         <button type="button" class="btn btn-ghost btn-small" id="add-link-btn">➕ Add a link</button>
       </div>
       <div class="form-actions">
-        <button type="submit" class="btn btn-primary" id="form-submit">➕ Add destination</button>
+        <button type="submit" class="btn btn-primary" id="form-submit">➕ Add it</button>
         <button type="button" class="btn btn-ghost" id="cancel-edit-btn" hidden>Cancel</button>
       </div>
     </form>
 
-    <h3>All destinations</h3>
-    <p class="manage-hint">Untick a destination to keep it off the wheel, click its name for
-      info &amp; links, ✏️ edit or ✕ delete it. The star is <em>yours</em>: ⭐ starred places get a
-      double-width segment, and every extra star from a partner 🌟 widens it further.</p>
+    <h3 id="manage-list-title">Everything on this wheel</h3>
+    <p class="manage-hint">Untick an entry to keep it off the wheel, click its name for
+      info &amp; links, ✏️ edit or ✕ delete it. The star is <em>yours</em>: ⭐ starred entries get a
+      double-width segment, and every extra star from another member 🌟 widens it further.</p>
     <ul id="dest-list" class="dest-list"></ul>
   </dialog>
 
   <footer class="site-footer">
-    Made for two indecisive travellers ❤️ · your wheels live on your own server, shared with whoever has your code
+    Made for indecisive people who love each other ❤️ · every wheel lives on your own
+    server, shared with whoever has its code
     <span class="footer-version" id="footer-version"></span>
   </footer>
 
