@@ -1,42 +1,61 @@
-# 🌍 Wheel of Wander — holiday picker for two
+# 🎡 Wheel of Choice — shared decision wheels
 
-A tiny webapp that helps couples pick their next holiday destination with a
-wheel-of-fortune spin. A small Flask server stores accounts and shared
+A tiny webapp that settles "where to next?" — and "where do we eat?" —
+with a wheel-of-fortune spin. A small Flask server stores accounts and
 wheels; the frontend is plain HTML/CSS/JS with no build step.
+
+> **A note on the name**: this project started life as *Wheel of Wander /
+> holiday-picker*, a holiday destination picker for two. It has since
+> outgrown that: wheels are now independent, individually shareable, and
+> not just about travel (there's a restaurant wheel type). The app now
+> calls itself **Wheel of Choice**; the GitHub repository is still named
+> `holiday-picker` and can be renamed (e.g. to `wheel-of-choice`) in the
+> repo settings — GitHub redirects the old URL, but the clone path in the
+> deploy instructions below and the git remote on any existing server
+> should be updated when you do. The systemd units keep the
+> `holiday-picker` name so existing installs keep working.
 
 ## Features
 
 - **Accounts** 👤 — registering takes ten seconds: a name and a password,
-  nothing else. Your destinations, favourites and filter preferences are
-  saved to your account.
-- **Onboarding** 🧭 — a few quick questions on first login (where's home,
-  how far you'll roam, what you love on a trip, budget style, and which
-  places you're already dreaming of) seed your wheels with destinations
-  that make sense for you: distances are computed relative to *your*
-  home region, far-away places are parked as disabled instead of
-  cluttering the wheel, and local gems get switched on for the homes
-  they're near — a Benelux wheel starts with Maastricht and Lille on it,
-  a British one with York and Galway, without either cluttering the
-  other. The best vibe/budget matches are pre-starred as favourites, and
-  the places you picked yourself start starred too — even when they're
-  beyond your roam range.
-- **Sharing** 🔗 — every set of wheels has a share code and an invite
-  link, and it isn't limited to couples: three or four friends sharing
-  one set of wheels works just as well. Send the link and the account
-  someone creates through it joins your wheels automatically (or they
-  enter the code by hand); from then on you all spin the *same* wheels:
-  destinations, favourites and history stay in sync, while everyone
+  nothing else. Your wheels, favourites and filter preferences are saved
+  to your account.
+- **Wheels, plural** 🎡 — every wheel is its own little world: its own
+  entries, its own spin history, its own share code. A user can hold any
+  number of wheels (shown as tabs; ➕ creates or joins another one), and
+  a wheel can be shared with any number of accounts. There are three
+  kinds:
+  - 🌍 **Holidays** — whole-country destinations, seeded from the
+    catalogue via a few onboarding questions.
+  - 🏙️ **City trips** — cities in and around Europe, seeded the same way.
+  - 🍽️ **Restaurants** — a fully custom list: no seeding, you add every
+    spot yourself, and **no vetoes** — where the wheel lands is where
+    you eat.
+- **Onboarding per travel wheel** 🧭 — creating a holidays or city-trips
+  wheel asks a few quick questions (where's home, how far you'll roam,
+  what you love on a trip, budget style, and which places you're already
+  dreaming of) and seeds that wheel with destinations that make sense
+  for you: distances are computed relative to *your* home region,
+  far-away places are parked as disabled instead of cluttering the
+  wheel, and local gems get switched on for the homes they're near — a
+  Benelux wheel starts with Maastricht and Lille on it, a British one
+  with York and Galway. The best vibe/budget matches are pre-starred as
+  favourites, and the places you picked yourself start starred too —
+  even when they're beyond your roam range.
+- **Per-wheel sharing** 🔗 — every wheel has its **own** share code and
+  invite link; a code joins exactly that one wheel and nothing else. So
+  you can share your restaurant wheel with the whole friend group while
+  the holiday wheel stays between the two of you — and one person can be
+  on their partner's holiday wheel, their family's city-trip wheel and
+  three restaurant wheels at once. Everyone on a wheel spins the *same*
+  wheel: entries, favourites and history stay in sync, while everyone
   keeps their own filters. Right after joining, a welcome screen invites
-  the newcomer to star the places *they* dream of, so the shared wheels
-  reflect everyone from day one.
-- **Two wheels** 🌍🏙️ — tabs switch between *Holidays* (whole countries)
-  and *City trips* (cities in and around Europe), each with its own
-  destination list and history.
-- **Spin the wheel** 🎡 — filled with every destination that matches your
+  the newcomer to star the entries *they* dream of.
+- **Spin the wheel** 🎡 — filled with every entry that matches your
   current preferences.
-- **Trip preferences** that filter what lands on the wheel — every group
-  is multi-select (pick e.g. both *low* and *mid* budget; *Any* clears
-  the group):
+- **Trip preferences** (travel wheels) that filter what lands on the
+  wheel — every group is multi-select (pick e.g. both *low* and *mid*
+  budget; *Any* clears the group):
   - 💶 **Budget**: low / mid / high
   - ✈️ **Distance**: regional (car/train), Europe, or long-haul
   - 👥 **Travel party**: just the two of you, or with friends & family
@@ -44,48 +63,49 @@ wheels; the frontend is plain HTML/CSS/JS with no build step.
     adventure, wellness, or snow
   - 📅 **Season**: when you want to travel (destinations are tagged with
     their best months)
-- **Favourites** ⭐ — every star is personal: star the destinations you
-  love (in the manage panel, during onboarding, or on the joiner's
-  welcome screen) and they get a double-width segment on the wheel.
-  Every extra star from another member widens the slice further 🌟 (up
-  to four wide) — the wheel leans toward what you agree on.
-- **Manage the destination list** ⚙️ — untick destinations to keep them
-  off the wheel, ✏️ edit any destination's name and tags, delete them, or
-  add your own.
-- **Veto & respin** 🙅 — every member gets exactly one veto per round
-  (tracked on the server, so no sneaky double vetoes), and a spin one
-  member accepts waits for the others' thumbs-up: their devices show the
-  pick with an accept-or-veto banner, and with three or four members it
-  only counts once *everyone* who can still veto has okayed it. A round
-  closes when a pick makes it into the history.
-- **Spin history & trip status** 📖 — accepted destinations are saved
-  (including who spun them) so you can look back at past picks. Each
+- **Favourites** ⭐ — every star is personal: star the entries you love
+  (in the manage panel, during creation, or on the joiner's welcome
+  screen) and they get a double-width segment on the wheel. Every extra
+  star from another member widens the slice further 🌟 (up to four
+  wide) — the wheel leans toward what you agree on.
+- **Manage the wheel** ⚙️ — untick entries to keep them off the wheel,
+  ✏️ edit any entry's name and tags, delete them, or add your own. On a
+  restaurant wheel the form is just a name, an emoji, notes and links.
+- **Veto & respin** 🙅 (travel wheels) — every member gets exactly one
+  veto per round (tracked on the server, so no sneaky double vetoes),
+  and a spin one member accepts waits for the others' thumbs-up: their
+  devices show the pick with an accept-or-veto banner, and with three or
+  four members it only counts once *everyone* who can still veto has
+  okayed it. A round closes when a pick makes it into the history.
+  Restaurant wheels skip all of this: the wheel's word is final and the
+  pick goes straight into the history.
+- **Spin history & trip status** 📖 — accepted picks are saved
+  (including who spun them) so you can look back. On travel wheels each
   pick can be marked 📅 *Booked* or ✅ *Been there* (with an optional
   trip date) from its info view; marking a pick "been there" takes the
   destination off the wheel automatically, so you don't spin Rome again
   next year — turning the history into a little travel log.
-- **Destination info & links** 📍 — every destination can carry notes
-  and links. Click a place in the spin history (or its name in the
-  manage panel) to see its tags, your notes, and clickable links
-  (seeded destinations start with their Wikivoyage and Wikipedia
-  pages), plus ready-made ✈️ flight and 🛏️ stay searches; the spin
-  result shows the notes and links too, so you can start planning right
-  away. Add your own links — hotel finds, blog posts, that one
-  restaurant — and notes via ✏️ edit in the manage panel (or the
-  shortcut button in the info view).
+- **Entry info & links** 📍 — every entry can carry notes and links.
+  Click a pick in the spin history (or a name in the manage panel) to
+  see its tags, your notes, and clickable links (seeded destinations
+  start with their Wikivoyage and Wikipedia pages), plus ready-made
+  planning searches — ✈️ flights and 🛏️ stays for travel wheels, 📍 a
+  maps lookup for restaurants; the spin result shows the notes and links
+  too, so you can start planning right away.
 - **Admin** 🛠️ — the first account ever registered runs the place: it can
-  make other users admin, pull someone out of shared wheels, delete
-  accounts, download or restore a full backup of the database, and
-  trigger a server self-update (see below).
+  make other users admin, pull someone out of every wheel they share,
+  delete accounts, download or restore a full backup of the database,
+  and trigger a server self-update (see below).
 
 **Storage**: everything lives on the server in `data/db.json` — accounts
 (passwords stored as scrypt hashes), login sessions (expiring after 90
-days), and each shared space's wheels. Only your login token stays in
-the browser. The admin panel can download that file as a backup and
-restore one later. Databases from the pre-account version are migrated
-automatically: the onboarding screen offers your old destinations and
-history to the first account ("keep them"), or you can answer the
-questions and start fresh.
+days), and every wheel. Only your login token stays in the browser. The
+admin panel can download that file as a backup and restore one later.
+Older databases are migrated automatically: the shared *spaces* of v2
+are split into independent wheels (the old space code keeps working — it
+now joins the holidays wheel, and the city-trips wheel gets a fresh code
+of its own), and the pre-account layout becomes unclaimed wheels the
+first account can adopt from the first-wheel screen.
 
 ## Running locally
 
@@ -168,6 +188,7 @@ The two starting catalogues —
 [`seed-destinations.json`](seed-destinations.json) (~85 countries) and
 [`seed-citytrips.json`](seed-citytrips.json) (~125 cities) — were
 **hand-curated for this app**, not imported from an external dataset.
+(Restaurant wheels have no catalogue on purpose — every entry is yours.)
 The tags are subjective editorial estimates meant to make the wheel
 useful on day one, roughly:
 
@@ -180,7 +201,7 @@ useful on day one, roughly:
   car or train.
 
 Treat them as conversation starters, not travel advice — and correct
-anything you disagree with in ⚙️ Manage destinations.
+anything you disagree with in ⚙️ Manage the wheel.
 
 For sources, every seeded destination starts with links to its
 [Wikivoyage](https://en.wikivoyage.org) travel guide and
@@ -194,15 +215,15 @@ sites, blogs, hotel pages, …) via ✏️ edit.
 - The starting catalogues live in
   [`seed-destinations.json`](seed-destinations.json) (holidays) and
   [`seed-citytrips.json`](seed-citytrips.json) (city trips) — used to
-  seed each account's wheels during onboarding; after that, edit
-  destinations in the app itself (⚙️ Manage destinations). Each entry's
-  `near` list names the home regions from which it counts as "regional"
-  (reachable by car or train); onboarding recomputes distances from the
-  answers. Entries with `"enabled": false` are niche picks that start
-  off the wheel — except for homes they're regional to, where a local
-  gem starts on it.
-- The tag vocabulary (`budget`, `distance`, `vibes`, `seasons`, `party`)
-  and the onboarding vocabulary (home regions, roam ranges) are defined
-  at the top of [`server.py`](server.py).
+  seed a travel wheel when it's created; after that, edit entries in the
+  app itself (⚙️ Manage the wheel). Each entry's `near` list names the
+  home regions from which it counts as "regional" (reachable by car or
+  train); the creation questions recompute distances from the answers.
+  Entries with `"enabled": false` are niche picks that start off the
+  wheel — except for homes they're regional to, where a local gem starts
+  on it.
+- The wheel types and the tag/onboarding vocabulary (`budget`,
+  `distance`, `vibes`, `seasons`, `party`, home regions, roam ranges)
+  are defined at the top of [`server.py`](server.py).
 - Colors and styling live in [`styles.css`](styles.css); all frontend
   logic is in [`app.js`](app.js).
