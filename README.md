@@ -83,7 +83,8 @@ wheels; the frontend is plain HTML/CSS/JS with no build step.
   too, so you can start planning right away.
 - **Push notifications** 🔔 — optional, per device: get a ping when
   someone spins and waits for your thumbs-up, when a pick gets vetoed,
-  and when the decision is final — even with the app closed. Standard
+  when the decision is final, and when a member adds a new entry to a
+  shared wheel — even with the app closed. Standard
   Web Push straight from your own server (no Firebase, no accounts with
   anyone); works on Android and, as a Home-Screen app, on iOS 16.4+.
   Setup in [Push notifications](#-push-notifications-optional).
@@ -184,8 +185,9 @@ out, but the app still speaks plain HTTP — run it on your home network
 
 The app can ping members' phones when something happens on a shared
 wheel: *"🎡 Emma spun 🇵🇹 Portugal — are you in, or is this your veto?"*,
-*"🙅 Bob vetoed 🇫🇷 France — spin again!"*, *"🎉 🇮🇹 Italy it is!"*. It
-uses **standard Web Push with VAPID keys**, which means:
+*"🙅 Bob vetoed 🇫🇷 France — spin again!"*, *"🎉 🇮🇹 Italy it is!"*,
+*"➕ Kim added 🍜 Pho 88"*. It uses **standard Web Push with VAPID
+keys**, which means:
 
 - your server signs every message itself and sends it **directly** to
   the push endpoint each browser registers — Apple's relay for iPhones,
