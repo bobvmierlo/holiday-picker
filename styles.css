@@ -183,8 +183,9 @@ body {
 .pending-actions { display: flex; gap: 0.5rem; }
 
 /* ── History ───────────────────────────────────────────────────────── */
-.history-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.8rem; }
+.history-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.8rem; width: 100%; }
 .history-list li {
+  width: 100%;
   background: rgba(255, 255, 255, 0.06);
   border-radius: 10px;
   padding: 0.5rem 0.7rem;
@@ -230,8 +231,8 @@ body {
 .veto-note { color: var(--text-dim); font-size: 0.78rem; margin-top: 0.9rem; }
 
 /* ── Destination links & info modal ────────────────────────────────── */
-.link-list { list-style: none; display: flex; flex-direction: column; gap: 0.45rem; margin: 0.3rem 0 0.9rem; }
-.link-list a { color: #8aa9ff; font-size: 0.9rem; word-break: break-word; }
+.link-list { list-style: none; display: flex; flex-direction: column; gap: 0.45rem; margin: 0.3rem 0 0.9rem; width: 100%; }
+.link-list a { color: #8aa9ff; font-size: 0.9rem; word-break: normal; overflow-wrap: break-word; }
 .link-list a:hover { color: #b3c6ff; }
 .result-links { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 0.4rem 1.1rem; margin: -0.5rem 0 1.1rem; }
 .result-links a { font-size: 0.82rem; }
@@ -312,9 +313,9 @@ body {
 
 .add-form textarea { resize: vertical; font-family: inherit; }
 .link-editor { display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.85rem; }
-.link-rows { display: flex; flex-direction: column; gap: 0.4rem; }
+.link-rows { display: flex; flex-direction: column; gap: 0.4rem; width: 100%; }
 .link-rows:empty { display: none; }
-.link-row { display: flex; gap: 0.4rem; align-items: center; }
+.link-row { display: flex; gap: 0.4rem; align-items: center; width: 100%; }
 .link-row .link-label { flex: 0 1 34%; min-width: 0; }
 .link-row .link-url { flex: 1; min-width: 0; }
 .link-row .del-btn {
@@ -525,7 +526,7 @@ body {
 .fav-group-label:first-child { margin-top: 0; }
 #welcome-view .fav-picker { margin-bottom: 1.15rem; }
 
-.join-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+.join-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; width: 100%; }
 .join-row input { flex: 1; min-width: 0; text-transform: uppercase; }
 .join-row input::placeholder { text-transform: none; }
 
@@ -540,7 +541,7 @@ body {
 }
 
 /* ── Share modal ───────────────────────────────────────────────────── */
-.share-code-row { display: flex; align-items: center; gap: 0.7rem; margin: 0.4rem 0 0.8rem; }
+.share-code-row { display: flex; align-items: center; gap: 0.7rem; margin: 0.4rem 0 0.8rem; width: 100%; }
 .share-link {
   flex: 1;
   min-width: 0;
@@ -581,7 +582,7 @@ body {
 .info-poll { border-top: 1px solid var(--panel-border); margin-top: 0.8rem; padding-top: 0.6rem; }
 .info-poll h3 { font-size: 0.95rem; margin: 0 0 0.4rem; }
 .info-poll-summary { color: var(--text-dim); font-size: 0.9rem; margin: 0 0 0.6rem; }
-.info-poll-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.info-poll-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; width: 100%; }
 .poll-locked { color: var(--text); font-weight: 600; }
 
 .cal-legend { color: var(--text-dim); font-size: 0.8rem; margin: 0.2rem 0 0.7rem; line-height: 1.5; }
@@ -649,8 +650,9 @@ body {
   color: var(--text-dim);
 }
 
-.poll-rows { list-style: none; padding: 0; margin: 0 0 0.6rem; }
+.poll-rows { list-style: none; padding: 0; margin: 0 0 0.6rem; width: 100%; }
 .poll-row {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 0.6rem;
@@ -679,9 +681,9 @@ body {
   font-weight: 700;
 }
 .poll-foot { color: var(--text-dim); font-size: 0.85rem; margin: 0.2rem 0 0.4rem; }
-.feed-list { margin-bottom: 0.6rem; }
+.feed-list { margin-bottom: 0.6rem; width: 100%; }
 .feed-list:empty { display: none; }
-.feed-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0; border-bottom: 1px solid var(--panel-border); }
+.feed-row { width: 100%; display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0; border-bottom: 1px solid var(--panel-border); }
 .feed-row-main { flex: 1; min-width: 0; }
 .feed-row-host { color: var(--text-dim); font-size: 0.8rem; word-break: break-all; }
 .linklike {
