@@ -20,7 +20,7 @@
   <header class="site-header">
     <div class="account-bar" id="account-bar" hidden>
       <span class="account-name" id="account-name"></span>
-      <button type="button" class="btn btn-ghost btn-small" id="admin-btn" hidden>🛠️ Admin</button>
+      <button type="button" class="btn btn-ghost btn-small" id="admin-btn" hidden>🛠️ Admin<span class="update-dot" id="admin-update-dot" hidden title="A newer version is available">🆕</span></button>
       <button type="button" class="btn btn-ghost btn-small" id="notify-btn" title="Notifications" hidden>🔔</button>
       <button type="button" class="btn btn-ghost btn-small" id="calendar-btn" title="My calendars" hidden>📆</button>
       <button type="button" class="btn btn-ghost btn-small" id="share-btn" hidden>🔗 Share</button>
@@ -455,6 +455,14 @@
       Changes apply to new and in-progress polls straight away.</p>
     <div class="admin-settings">
       <label class="admin-setting">
+        <span class="admin-setting-label">🌍 Timezone</span>
+        <span class="admin-setting-field">
+          <input type="text" id="setting-timezone" list="tz-options" autocomplete="off" spellcheck="false" placeholder="Europe/Amsterdam">
+          <datalist id="tz-options"></datalist>
+        </span>
+        <span class="admin-setting-hint">The IANA zone busy evenings and poll dates are judged in (e.g. Europe/London).</span>
+      </label>
+      <label class="admin-setting">
         <span class="admin-setting-label">🌆 Evenings start at</span>
         <span class="admin-setting-field">
           <input type="number" id="setting-evening-from" min="0" max="23" step="1" inputmode="numeric">
@@ -489,6 +497,7 @@
     <p class="manage-hint">Fetch the latest version from git and restart the
       server. Needs the updater units from <code>deploy/</code> installed.</p>
     <p class="manage-hint" id="admin-version"></p>
+    <p class="update-available" id="admin-update-available" hidden></p>
     <button type="button" class="btn btn-ghost" id="admin-update-btn">⬆️ Update &amp; restart server</button>
     <p class="update-status" id="update-status" role="status"></p>
     <p class="form-error" id="admin-error" role="alert"></p>

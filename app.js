@@ -268,6 +268,8 @@
   const adminError = document.getElementById('admin-error');
   const adminUpdateBtn = document.getElementById('admin-update-btn');
   const adminVersion = document.getElementById('admin-version');
+  const adminUpdateAvailable = document.getElementById('admin-update-available');
+  const adminUpdateDot = document.getElementById('admin-update-dot');
   const updateStatus = document.getElementById('update-status');
   const footerVersion = document.getElementById('footer-version');
 
@@ -329,6 +331,7 @@
   function applyMe() {
     accountName.textContent = `👤 ${me.user.name}`;
     adminBtn.hidden = !me.user.admin;
+    if (me.user.admin) checkForUpdate(); // light up the 🆕 dot if one's waiting
     notifyBtn.hidden = false;
     syncPushSubscription(); // fire-and-forget — keeps this device buzzing for this account
     syncCalendarButton(); // shows 📆 only if the server can read calendars
@@ -1487,6 +1490,7 @@
     adminModal.showModal();
     loadVersion(); // another admin may have updated in the meantime
     loadAdminSettings(); // another admin may have retuned the polls
+    startUpdatePolling(); // watch git for a newer commit while the panel's open
     try {
       renderAdminUsers(await rootApi('/admin/users'));
     } catch (err) {
@@ -1494,20 +1498,35 @@
     }
   });
   closeAdminBtn.addEventListener('click', () => adminModal.close());
+  adminModal.addEventListener('close', stopUpdatePolling);
 
-  // ── Poll settings (evening hour & horizon) ────────────────────────
+  // ── Poll settings (timezone, evening hour & horizon) ──────────────
+  const settingTimezone = document.getElementById('setting-timezone');
+  const tzOptions = document.getElementById('tz-options');
   const settingEveningFrom = document.getElementById('setting-evening-from');
   const settingHorizon = document.getElementById('setting-horizon');
   const settingsSaveBtn = document.getElementById('settings-save-btn');
   const settingsStatus = document.getElementById('settings-status');
+  let tzListLoaded = false;
 
   function fillSettings(s) {
+    settingTimezone.value = s.timezone;
     settingEveningFrom.value = s.evening_from;
     settingHorizon.value = s.poll_horizon_days;
     const [eMin, eMax] = s.bounds.evening_from;
     const [hMin, hMax] = s.bounds.poll_horizon_days;
     settingEveningFrom.min = eMin; settingEveningFrom.max = eMax;
     settingHorizon.min = hMin; settingHorizon.max = hMax;
+    // the zone list only rides along with the GET — populate the datalist once
+    if (Array.isArray(s.zones) && !tzListLoaded) {
+      tzOptions.innerHTML = '';
+      for (const z of s.zones) {
+        const opt = document.createElement('option');
+        opt.value = z;
+        tzOptions.append(opt);
+      }
+      tzListLoaded = true;
+    }
     // keep the propose grid in step with what's saved
     pollHorizonDays = s.poll_horizon_days;
     pollEveningFrom = s.evening_from;
@@ -1529,6 +1548,7 @@
       const s = await rootApi('/admin/settings', {
         method: 'PUT',
         body: JSON.stringify({
+          timezone: settingTimezone.value.trim(),
           evening_from: Number(settingEveningFrom.value),
           poll_horizon_days: Number(settingHorizon.value),
         }),
@@ -1722,6 +1742,7 @@
         updateStatus.textContent = !baseline || v.commit !== baseline.commit
           ? `✅ Updated! Now running ${v.commit}${v.commit_subject ? ` (“${v.commit_subject}”)` : ''}.`
           : '✅ Server restarted — it was already on the latest version.';
+        checkForUpdate(true); // refresh the badge now we've moved
         return;
       }
       if (Date.now() - startedAt > UPDATE_TIMEOUT_MS) {
@@ -1752,6 +1773,48 @@
     }
     watchUpdate(baseline);
   });
+
+  // ── "Update available" check ──────────────────────────────────────
+  // Poll the git remote (server-side, cached) so the panel — and a 🆕 dot
+  // on the Admin button — flag when a newer commit is waiting to be pulled.
+  const UPDATE_CHECK_POLL_MS = 60 * 1000;
+  let updateCheckTimer = null;
+
+  function renderUpdateAvailable(info) {
+    const available = !!(info && info.checked && info.update_available);
+    adminUpdateDot.hidden = !available;
+    if (!info || !info.checked) {
+      adminUpdateAvailable.hidden = true;
+      return;
+    }
+    if (available) {
+      adminUpdateAvailable.hidden = false;
+      adminUpdateAvailable.textContent =
+        `🆕 A newer version is on git (${info.latest} on ${info.branch}) — `
+        + `you're running ${info.current}. Hit “Update & restart” to pull it.`;
+    } else {
+      adminUpdateAvailable.hidden = false;
+      adminUpdateAvailable.textContent = '✅ Up to date with the git remote.';
+    }
+  }
+
+  async function checkForUpdate(force = false) {
+    try {
+      const info = await rootApi(`/admin/update-check${force ? '?force=1' : ''}`);
+      renderUpdateAvailable(info);
+    } catch { /* offline or not admin — leave the last state be */ }
+  }
+
+  function startUpdatePolling() {
+    checkForUpdate();
+    clearInterval(updateCheckTimer);
+    updateCheckTimer = setInterval(checkForUpdate, UPDATE_CHECK_POLL_MS);
+  }
+
+  function stopUpdatePolling() {
+    clearInterval(updateCheckTimer);
+    updateCheckTimer = null;
+  }
 
   // ── Wheel drawing ─────────────────────────────────────────────────
   let rotation = 0;          // current wheel rotation in radians

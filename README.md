@@ -178,7 +178,9 @@ sudo systemctl enable --now wheel-of-choice-update.path
 — and the 🛠️ Admin panel's "Update & restart server" button does the
 pull-and-restart for you. (The app itself runs sandboxed without sudo;
 the button drops a flag file in the state directory, which the path unit
-watches and acts on as root.)
+watches and acts on as root.) The panel also checks the git remote in the
+background and flags — with a 🆕 dot on the **🛠️ Admin** button and a note
+in the Server section — when a newer commit is waiting to be pulled.
 
 **Changing the port**: edit the last line of `server.py`, then
 `sudo systemctl restart wheel-of-choice`.
@@ -303,15 +305,16 @@ sudo pip3 install icalendar recurring-ical-events   # --break-system-packages on
 # or, from a venv: pip install -r requirements.txt
 ```
 
-Busy evenings are judged in local time (17:00–midnight by default). If
-your server isn't on Amsterdam time, set your zone — uncomment `WHEEL_TZ`
-in [`deploy/wheel-of-choice.service`](deploy/wheel-of-choice.service) (any
-[IANA name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)
-like `Europe/London` or `America/New_York`), then restart.
+Busy evenings are judged in local time (Amsterdam, 17:00–midnight by
+default).
 
-**Two poll knobs are tunable live**, no restart or env editing needed —
+**Three poll knobs are tunable live**, no restart or env editing needed —
 open **🛠️ Admin → Date polls** (admins only):
 
+- **timezone** — the [IANA
+  zone](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)
+  (e.g. `Europe/London`, `America/New_York`) busy evenings and poll dates
+  are judged in; pick from the list;
 - **when an evening starts** (0–23, default 17) — the hour from which a
   calendar event counts as a busy evening, for an early-bird or a
   later-dinner crowd;
@@ -319,7 +322,7 @@ open **🛠️ Admin → Date polls** (admins only):
   into the future you can put candidate evenings up.
 
 Changes are saved to the server's `db.json` and take effect immediately
-for new and in-progress polls. The `WHEEL_EVENING_FROM` and
+for new and in-progress polls. The `WHEEL_TZ`, `WHEEL_EVENING_FROM` and
 `WHEEL_POLL_HORIZON_DAYS` env vars only set the starting defaults an admin
 can then override.
 
@@ -348,8 +351,8 @@ each member does this on their own account.
 - *"couldn't read that calendar"* — it must be an `https://` (or
   `webcal://`) address the server can reach; double-check you copied the
   **secret/private** iCal URL, not the calendar's web page.
-- *Busy evenings look off by an hour or on the wrong day* — set `WHEEL_TZ`
-  to your own timezone and restart.
+- *Busy evenings look off by an hour or on the wrong day* — set the
+  timezone in **🛠️ Admin → Date polls** (or the `WHEEL_TZ` default).
 - *All-day events don't mark me busy* — on purpose: birthday and
   public-holiday calendars would otherwise paint whole weeks red. Only
   timed evening events (from the evening-start hour, 17:00 by default —

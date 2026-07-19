@@ -399,6 +399,18 @@ body {
 }
 .admin-setting-suffix { color: var(--text-dim); font-size: 0.9rem; }
 .admin-setting-hint { grid-column: 1 / -1; color: var(--text-dim); font-size: 0.8rem; line-height: 1.4; }
+.admin-setting-field input[type="text"] { width: 13rem; max-width: 100%; }
+
+.update-available {
+  font-size: 0.88rem;
+  color: var(--text);
+  background: rgba(110, 231, 168, 0.12);
+  border: 1px solid rgba(110, 231, 168, 0.4);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  margin: 0 0 0.6rem;
+}
+.update-dot { margin-left: 0.3rem; font-size: 0.85em; }
 
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .btn:disabled:active { transform: none; }

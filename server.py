@@ -55,7 +55,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote, urlparse
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from flask import Flask, abort, jsonify, request, send_from_directory
 from werkzeug.exceptions import HTTPException
@@ -123,11 +123,12 @@ SESSION_TTL_DAYS = 90  # log-ins older than this expire
 # evening. A poll lives on the history entry, so it syncs, dies and clears
 # with the entry. The evening window is what "busy" means for a dinner.
 POLL_MAX_DATES = 10  # candidate dates a proposer may put up
-LOCAL_TZ = ZoneInfo(os.environ.get("WHEEL_TZ", "Europe/Amsterdam"))
 
-# Two poll knobs are admin-tunable at runtime (Admin → Date polls), stored
-# in the db under "settings". The env vars below are only the *defaults*
-# used until an admin overrides them — an admin change wins and persists.
+# Three knobs are admin-tunable at runtime (Admin → Date polls), stored in
+# the db under "settings": the timezone busy evenings are judged in, the
+# hour an evening starts, and how far ahead a poll reaches. The env vars
+# below are only the *defaults* used until an admin overrides them — an
+# admin change wins and persists.
 EVENING_FROM_MIN, EVENING_FROM_MAX = 0, 23  # a local hour
 HORIZON_MIN, HORIZON_MAX = 7, 365  # days a poll can reach ahead
 
@@ -150,25 +151,46 @@ def clamp_horizon(value, fallback):
         return fallback
 
 
-# Env-var defaults (WHEEL_EVENING_FROM, WHEEL_POLL_HORIZON_DAYS) seed the
-# settings; the built-in fallbacks are 17:00 and 60 days.
+def clean_timezone(value, fallback):
+    """A valid IANA zone name (e.g. 'Europe/London'); anything unknown or
+    malformed falls back. Busy evenings and poll dates are judged in it."""
+    if not value:
+        return fallback
+    try:
+        ZoneInfo(str(value))  # raises unless it names a real zone
+        return str(value)
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        return fallback
+
+
+# Env-var defaults (WHEEL_TZ, WHEEL_EVENING_FROM, WHEEL_POLL_HORIZON_DAYS)
+# seed the settings; the built-in fallbacks are Amsterdam, 17:00 and 60 days.
+DEFAULT_TZ = clean_timezone(os.environ.get("WHEEL_TZ"), "Europe/Amsterdam")
 DEFAULT_EVENING_FROM = clamp_evening_from(os.environ.get("WHEEL_EVENING_FROM"), 17)
 DEFAULT_POLL_HORIZON_DAYS = clamp_horizon(os.environ.get("WHEEL_POLL_HORIZON_DAYS"), 60)
 
 # Effective values in force right now. load_db() refreshes these from the
 # stored settings on every request, so they always mirror what the admin
 # last saved (and survive restarts and restores).
+LOCAL_TZ = ZoneInfo(DEFAULT_TZ)
 EVENING_FROM = DEFAULT_EVENING_FROM
 POLL_HORIZON_DAYS = DEFAULT_POLL_HORIZON_DAYS
 
+# Every IANA zone name, computed once — the admin timezone picker's options.
+ALL_ZONES = sorted(available_timezones())
+
 
 def settings_view(db):
-    """The admin-tunable poll settings, plus the defaults to reset to."""
+    """The admin-tunable poll settings, plus the defaults to reset to and
+    the bounds the admin UI needs. Kept lean — apply_runtime_settings runs
+    it on every db load, so the full zone list lives in the GET endpoint."""
     stored = db.get("settings") or {}
     return {
+        "timezone": clean_timezone(stored.get("timezone"), DEFAULT_TZ),
         "evening_from": clamp_evening_from(stored.get("evening_from"), DEFAULT_EVENING_FROM),
         "poll_horizon_days": clamp_horizon(stored.get("poll_horizon_days"), DEFAULT_POLL_HORIZON_DAYS),
         "defaults": {
+            "timezone": DEFAULT_TZ,
             "evening_from": DEFAULT_EVENING_FROM,
             "poll_horizon_days": DEFAULT_POLL_HORIZON_DAYS,
         },
@@ -181,9 +203,11 @@ def settings_view(db):
 
 def apply_runtime_settings(db):
     """Mirror the stored poll settings into the module-level globals the
-    rest of the server reads. Cheap enough to run on every db load."""
-    global EVENING_FROM, POLL_HORIZON_DAYS
+    rest of the server reads. Cheap enough to run on every db load
+    (ZoneInfo instances are cached, so rebuilding LOCAL_TZ is nearly free)."""
+    global LOCAL_TZ, EVENING_FROM, POLL_HORIZON_DAYS
     view = settings_view(db)
+    LOCAL_TZ = ZoneInfo(view["timezone"])
     EVENING_FROM = view["evening_from"]
     POLL_HORIZON_DAYS = view["poll_horizon_days"]
 
@@ -221,6 +245,64 @@ def git_version():
 
 
 GIT_VERSION = git_version()
+
+# Update check: ask the git remote whether the tracked branch has moved past
+# the commit we're running. Cached briefly so the admin panel can poll often
+# without hammering GitHub (or blocking on the network every time).
+UPDATE_CHECK_TTL = 5 * 60  # seconds a remote-HEAD lookup is reused
+_update_check_lock = threading.Lock()
+_update_check_cache = {"at": 0.0, "data": None}
+
+
+def _git(*args, timeout=10):
+    """Run a git command in the repo, returning stripped stdout or None."""
+    try:
+        out = subprocess.run(
+            ["git", "-c", f"safe.directory={ROOT}", "-C", str(ROOT), *args],
+            capture_output=True, text=True, timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() if out.returncode == 0 else None
+
+
+def compute_update_check():
+    """Is the tracked branch on the remote ahead of what we're running?
+    Compares the local HEAD sha to the remote branch's sha via ls-remote
+    (a lightweight network call — no fetch, nothing written to the repo)."""
+    off = {"checked": False, "update_available": False}
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+    local = _git("rev-parse", "HEAD")
+    if not branch or not local or branch == "HEAD":
+        return off  # no git, or a detached checkout we can't track
+    remote = _git("ls-remote", "origin", branch, timeout=15)
+    if remote is None:
+        return off  # remote unreachable — offline, or no 'origin'
+    remote_sha = remote.split()[0] if remote.split() else ""
+    if not remote_sha:
+        return off
+    return {
+        "checked": True,
+        "update_available": remote_sha != local,
+        "branch": branch,
+        "current": local[:9],
+        "latest": remote_sha[:9],
+    }
+
+
+def update_check(force=False):
+    """compute_update_check() behind a short TTL cache, so frequent admin
+    polls collapse into at most one remote lookup per UPDATE_CHECK_TTL."""
+    now = time.time()
+    with _update_check_lock:
+        cached = _update_check_cache["data"]
+        if not force and cached and now - _update_check_cache["at"] < UPDATE_CHECK_TTL:
+            return cached
+    data = compute_update_check()  # network I/O, no lock held
+    with _update_check_lock:
+        _update_check_cache["at"] = time.time()
+        _update_check_cache["data"] = data
+    return data
 
 
 @app.errorhandler(HTTPException)
@@ -1203,29 +1285,33 @@ def admin_get_settings():
     with _lock:
         db = load_db()
         require_admin(db)
-        return jsonify(settings_view(db))
+        return jsonify({**settings_view(db), "zones": ALL_ZONES})
 
 
 @app.put("/api/admin/settings")
 def admin_put_settings():
-    """Tune the two poll knobs — when an evening starts, and how far ahead
-    a poll may reach. Values are clamped to their bounds; the calendar
-    cache is cleared so busy hints recompute against the new window."""
+    """Tune the three poll knobs — the timezone, when an evening starts, and
+    how far ahead a poll may reach. Values are clamped/validated; the
+    calendar cache is cleared so busy hints recompute against the new
+    timezone and window."""
     payload = request.get_json(force=True, silent=True) or {}
     with _lock:
         db = load_db()
         require_admin(db)
         stored = db.setdefault("settings", {})
+        current = settings_view(db)  # fall back to what's in force, not the env default
+        if "timezone" in payload:
+            stored["timezone"] = clean_timezone(payload.get("timezone"), current["timezone"])
         if "evening_from" in payload:
             stored["evening_from"] = clamp_evening_from(
-                payload.get("evening_from"), DEFAULT_EVENING_FROM)
+                payload.get("evening_from"), current["evening_from"])
         if "poll_horizon_days" in payload:
             stored["poll_horizon_days"] = clamp_horizon(
-                payload.get("poll_horizon_days"), DEFAULT_POLL_HORIZON_DAYS)
+                payload.get("poll_horizon_days"), current["poll_horizon_days"])
         save_db(db)
         apply_runtime_settings(db)
         view = settings_view(db)
-    with _cal_lock:  # busy-sets were digested against the old evening/horizon
+    with _cal_lock:  # busy-sets were digested against the old timezone/window
         _cal_cache.clear()
     return jsonify(view)
 
@@ -1341,7 +1427,23 @@ def admin_update():
             UPDATE_FLAG.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
         except OSError:
             abort(500, description="could not write the update request")
+    with _update_check_lock:  # a pull is coming — don't keep flagging it stale
+        _update_check_cache["at"] = 0.0
+        _update_check_cache["data"] = None
     return jsonify({"requested": True}), 202
+
+
+@app.get("/api/admin/update-check")
+def admin_update_check():
+    """Whether the git remote's tracked branch is ahead of what we run.
+    Admin-only and polled by the panel; the result is cached server-side
+    (UPDATE_CHECK_TTL) so frequent polls don't hit the network each time.
+    Pass ?force=1 to bypass the cache for an on-demand recheck."""
+    with _lock:
+        db = load_db()
+        require_admin(db)
+    force = request.args.get("force") in ("1", "true", "yes")
+    return jsonify(update_check(force=force))
 
 
 @app.get("/api/version")
