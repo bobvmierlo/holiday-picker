@@ -29,10 +29,17 @@ Environment=WHEEL_DATA_DIR=/var/lib/wheel-of-choice
 # flag delivery problems with your server's pushes.
 #Environment=VAPID_SUBJECT=mailto:you@example.com
 
-# Date polls read calendars (optional — needs icalendar and
-# recurring-ical-events, see the README) in this timezone. Busy evenings
-# are worked out in local time, so set your own if it isn't Amsterdam.
+# Starting defaults for the three date-poll knobs — all three are also
+# tunable live in 🛠️ Admin → Date polls, which overrides these:
+#   WHEEL_TZ                the timezone busy evenings are judged in
+#                           (any IANA name; default Europe/Amsterdam)
+#   WHEEL_EVENING_FROM      local hour a "busy evening" starts (0–23, default 17)
+#   WHEEL_POLL_HORIZON_DAYS how far ahead a poll may reach (7–365, default 60)
+# (Busy hints also need the icalendar / recurring-ical-events libs — see
+# the README.)
 #Environment=WHEEL_TZ=Europe/Amsterdam
+#Environment=WHEEL_EVENING_FROM=17
+#Environment=WHEEL_POLL_HORIZON_DAYS=60
 
 # Run as an unprivileged throwaway user with a read-only view of the system
 DynamicUser=yes

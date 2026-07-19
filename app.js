@@ -268,6 +268,8 @@
   const adminError = document.getElementById('admin-error');
   const adminUpdateBtn = document.getElementById('admin-update-btn');
   const adminVersion = document.getElementById('admin-version');
+  const adminUpdateAvailable = document.getElementById('admin-update-available');
+  const adminUpdateDot = document.getElementById('admin-update-dot');
   const updateStatus = document.getElementById('update-status');
   const footerVersion = document.getElementById('footer-version');
 
@@ -329,6 +331,7 @@
   function applyMe() {
     accountName.textContent = `👤 ${me.user.name}`;
     adminBtn.hidden = !me.user.admin;
+    if (me.user.admin) checkForUpdate(); // light up the 🆕 dot if one's waiting
     notifyBtn.hidden = false;
     syncPushSubscription(); // fire-and-forget — keeps this device buzzing for this account
     syncCalendarButton(); // shows 📆 only if the server can read calendars
@@ -991,16 +994,24 @@
   const pollLegend = document.getElementById('poll-legend');
   const pollVoteLegend = document.getElementById('poll-vote-legend');
   const dateGrid = document.getElementById('date-grid');
+  const dateMonth = document.getElementById('date-month');
+  const datePrevBtn = document.getElementById('date-prev-btn');
+  const dateNextBtn = document.getElementById('date-next-btn');
   const pollCreateBtn = document.getElementById('poll-create-btn');
   const pollRows = document.getElementById('poll-rows');
   const pollFoot = document.getElementById('poll-foot');
   const pollScrapBtn = document.getElementById('poll-scrap-btn');
   const pollError = document.getElementById('poll-error');
 
-  const GRID_WEEKS = 5;  // weeks shown in the propose grid (≈ a month ahead)
+  // Both refreshed from the server (admin-configurable) whenever a poll's
+  // availability loads — see loadPollAvailability. The defaults only stand
+  // in for the moment before that first fetch returns.
+  let pollHorizonDays = 60;  // how far ahead a poll can reach
+  let pollEveningFrom = 17;  // local hour an evening counts as busy
 
   let pollEntryId = null;
   let pollSelected = new Set();  // candidate dates while proposing
+  let pollViewMonth = null;      // first day of the month shown in the propose grid
   let myVote = new Set();        // this member's ticks while voting
   let pollAvail = {};            // date → 'busy'|'free'|'unknown' (viewer's own)
   let pollLinked = false;        // viewer has a calendar linked
@@ -1112,16 +1123,27 @@
     pollCalEnabled = false;
     try {
       const today = new Date(); today.setHours(0, 0, 0, 0);
-      const av = await rootApi(`/me/availability?from=${isoLocal(today)}&days=${GRID_WEEKS * 7}`);
+      // ask for the widest window we support; the server clamps to its own
+      // horizon and tells us what that (admin-set) horizon actually is
+      const av = await rootApi(`/me/availability?from=${isoLocal(today)}&days=366`);
       pollCalEnabled = !!(av && av.enabled);
       pollLinked = !!(av && av.linked);
+      if (av && Number.isFinite(av.horizon_days)) pollHorizonDays = av.horizon_days;
+      if (av && Number.isFinite(av.evening_from)) pollEveningFrom = av.evening_from;
       if (pollLinked && av.days) pollAvail = av.days;
     } catch { /* availability is a hint, never a blocker */ }
   }
 
+  // 17 → "5pm", 0 → "midnight", 12 → "noon" — a friendly evening-start label
+  function fmtHour(h) {
+    if (h === 0) return 'midnight';
+    if (h === 12) return 'noon';
+    return `${((h + 11) % 12) + 1}${h < 12 ? 'am' : 'pm'}`;
+  }
+
   function setPollLegend(el) {
     if (pollLinked) {
-      el.innerHTML = '<span class="cal-dot busy"></span>busy that evening'
+      el.innerHTML = `<span class="cal-dot busy"></span>busy that evening (from ${fmtHour(pollEveningFrom)})`
         + '<span class="cal-dot free"></span>free — <em>from your calendar; all still tappable</em>';
     } else if (pollCalEnabled) {
       el.textContent = '📆 Link your calendar (top bar) and your busy evenings mark themselves.';
@@ -1140,20 +1162,37 @@
     if (!pollModal.open) pollModal.showModal();
   }
 
+  function monthStart(d) {
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  }
+
+  // The propose grid pages a month at a time. Days before today or beyond
+  // the poll horizon are shown but disabled, and the ‹ › buttons stop at
+  // those same bounds so you can only land on dates a poll would accept.
   function buildDateGrid() {
     dateGrid.innerHTML = '';
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const todayIso = isoLocal(today);
-    const start = new Date(today);
-    start.setDate(today.getDate() - ((today.getDay() + 6) % 7));  // Monday of this week
-    for (let i = 0; i < GRID_WEEKS * 7; i++) {
-      const day = new Date(start); day.setDate(start.getDate() + i);
+    const horizon = new Date(today); horizon.setDate(today.getDate() + pollHorizonDays);
+    const horizonIso = isoLocal(horizon);
+    if (!pollViewMonth) pollViewMonth = monthStart(today);
+
+    const first = pollViewMonth;
+    const lead = (first.getDay() + 6) % 7;  // blank cells before the 1st (Monday-first)
+    const daysInMonth = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+    for (let i = 0; i < lead; i++) {
+      const blank = document.createElement('div');
+      blank.className = 'day-cell empty';
+      dateGrid.append(blank);
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      const day = new Date(first.getFullYear(), first.getMonth(), d);
       const iso = isoLocal(day);
       const cell = document.createElement('button');
       cell.type = 'button';
       cell.className = 'day-cell';
-      cell.textContent = String(day.getDate());
-      if (iso < todayIso) {
+      cell.textContent = String(d);
+      if (iso < todayIso || iso > horizonIso) {
         cell.disabled = true;
       } else {
         cell.dataset.date = iso;
@@ -1169,6 +1208,16 @@
       }
       dateGrid.append(cell);
     }
+
+    dateMonth.textContent = first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    datePrevBtn.disabled = first <= monthStart(today);
+    dateNextBtn.disabled = new Date(first.getFullYear(), first.getMonth() + 1, 1) > horizon;
+  }
+
+  function shiftPollMonth(delta) {
+    const base = pollViewMonth || monthStart(new Date());
+    pollViewMonth = new Date(base.getFullYear(), base.getMonth() + delta, 1);
+    buildDateGrid();
   }
 
   function syncCreateBtn() {
@@ -1181,6 +1230,7 @@
     pollTitle.textContent = '🗳️ Find an evening';
     pollSub.textContent = `Pick the evenings that could work for ${entry.flag} ${entry.name}, then put them to the group.`;
     pollSelected = new Set();
+    pollViewMonth = null;  // always open on the current month
     setPollLegend(pollLegend);
     buildDateGrid();
     syncCreateBtn();
@@ -1331,6 +1381,9 @@
     }
   });
 
+  datePrevBtn.addEventListener('click', () => shiftPollMonth(-1));
+  dateNextBtn.addEventListener('click', () => shiftPollMonth(1));
+
   pollScrapBtn.addEventListener('click', scrapPoll);
   closePollBtn.addEventListener('click', () => pollModal.close());
 
@@ -1436,6 +1489,8 @@
     adminUserList.innerHTML = '';
     adminModal.showModal();
     loadVersion(); // another admin may have updated in the meantime
+    loadAdminSettings(); // another admin may have retuned the polls
+    startUpdatePolling(); // watch git for a newer commit while the panel's open
     try {
       renderAdminUsers(await rootApi('/admin/users'));
     } catch (err) {
@@ -1443,6 +1498,69 @@
     }
   });
   closeAdminBtn.addEventListener('click', () => adminModal.close());
+  adminModal.addEventListener('close', stopUpdatePolling);
+
+  // ── Poll settings (timezone, evening hour & horizon) ──────────────
+  const settingTimezone = document.getElementById('setting-timezone');
+  const tzOptions = document.getElementById('tz-options');
+  const settingEveningFrom = document.getElementById('setting-evening-from');
+  const settingHorizon = document.getElementById('setting-horizon');
+  const settingsSaveBtn = document.getElementById('settings-save-btn');
+  const settingsStatus = document.getElementById('settings-status');
+  let tzListLoaded = false;
+
+  function fillSettings(s) {
+    settingTimezone.value = s.timezone;
+    settingEveningFrom.value = s.evening_from;
+    settingHorizon.value = s.poll_horizon_days;
+    const [eMin, eMax] = s.bounds.evening_from;
+    const [hMin, hMax] = s.bounds.poll_horizon_days;
+    settingEveningFrom.min = eMin; settingEveningFrom.max = eMax;
+    settingHorizon.min = hMin; settingHorizon.max = hMax;
+    // the zone list only rides along with the GET — populate the datalist once
+    if (Array.isArray(s.zones) && !tzListLoaded) {
+      tzOptions.innerHTML = '';
+      for (const z of s.zones) {
+        const opt = document.createElement('option');
+        opt.value = z;
+        tzOptions.append(opt);
+      }
+      tzListLoaded = true;
+    }
+    // keep the propose grid in step with what's saved
+    pollHorizonDays = s.poll_horizon_days;
+    pollEveningFrom = s.evening_from;
+  }
+
+  async function loadAdminSettings() {
+    settingsStatus.textContent = '';
+    try {
+      fillSettings(await rootApi('/admin/settings'));
+    } catch (err) {
+      settingsStatus.textContent = `⚠️ ${err.message}`;
+    }
+  }
+
+  settingsSaveBtn.addEventListener('click', async () => {
+    settingsStatus.textContent = '⏳ Saving…';
+    settingsSaveBtn.disabled = true;
+    try {
+      const s = await rootApi('/admin/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          timezone: settingTimezone.value.trim(),
+          evening_from: Number(settingEveningFrom.value),
+          poll_horizon_days: Number(settingHorizon.value),
+        }),
+      });
+      fillSettings(s);
+      settingsStatus.textContent = '✅ Saved — polls use these straight away.';
+    } catch (err) {
+      settingsStatus.textContent = `⚠️ ${err.message}`;
+    } finally {
+      settingsSaveBtn.disabled = false;
+    }
+  });
 
   // ── Backup & restore ──────────────────────────────────────────────
   const adminBackupBtn = document.getElementById('admin-backup-btn');
@@ -1624,6 +1742,7 @@
         updateStatus.textContent = !baseline || v.commit !== baseline.commit
           ? `✅ Updated! Now running ${v.commit}${v.commit_subject ? ` (“${v.commit_subject}”)` : ''}.`
           : '✅ Server restarted — it was already on the latest version.';
+        checkForUpdate(true); // refresh the badge now we've moved
         return;
       }
       if (Date.now() - startedAt > UPDATE_TIMEOUT_MS) {
@@ -1654,6 +1773,48 @@
     }
     watchUpdate(baseline);
   });
+
+  // ── "Update available" check ──────────────────────────────────────
+  // Poll the git remote (server-side, cached) so the panel — and a 🆕 dot
+  // on the Admin button — flag when a newer commit is waiting to be pulled.
+  const UPDATE_CHECK_POLL_MS = 60 * 1000;
+  let updateCheckTimer = null;
+
+  function renderUpdateAvailable(info) {
+    const available = !!(info && info.checked && info.update_available);
+    adminUpdateDot.hidden = !available;
+    if (!info || !info.checked) {
+      adminUpdateAvailable.hidden = true;
+      return;
+    }
+    if (available) {
+      adminUpdateAvailable.hidden = false;
+      adminUpdateAvailable.textContent =
+        `🆕 A newer version is on git (${info.latest} on ${info.branch}) — `
+        + `you're running ${info.current}. Hit “Update & restart” to pull it.`;
+    } else {
+      adminUpdateAvailable.hidden = false;
+      adminUpdateAvailable.textContent = '✅ Up to date with the git remote.';
+    }
+  }
+
+  async function checkForUpdate(force = false) {
+    try {
+      const info = await rootApi(`/admin/update-check${force ? '?force=1' : ''}`);
+      renderUpdateAvailable(info);
+    } catch { /* offline or not admin — leave the last state be */ }
+  }
+
+  function startUpdatePolling() {
+    checkForUpdate();
+    clearInterval(updateCheckTimer);
+    updateCheckTimer = setInterval(checkForUpdate, UPDATE_CHECK_POLL_MS);
+  }
+
+  function stopUpdatePolling() {
+    clearInterval(updateCheckTimer);
+    updateCheckTimer = null;
+  }
 
   // ── Wheel drawing ─────────────────────────────────────────────────
   let rotation = 0;          // current wheel rotation in radians
@@ -2008,6 +2169,13 @@
         state.history = res.history;
         renderHistory();
         wheelHint.textContent = finalMessage(result);
+        // A restaurant pick's next step is settling an evening, so take the
+        // spinner straight into the date poll instead of making them dig it
+        // out of the history. Travel picks book instead — no poll for them.
+        if (!isTravelWheel()) {
+          const entry = res.history.find((e) => e.dest_id === result.id);
+          if (entry) openPollModal(entry, 'propose');
+        }
       } else {
         wheelHint.textContent = `Waiting for ${waitingNames(res.round.pending)} to okay ${result.flag} ${result.name} — they can still veto ✋`;
       }
