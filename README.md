@@ -4,6 +4,19 @@ A tiny webapp that settles "where to next?" — and "where do we eat?" —
 with a wheel-of-fortune spin. A small Flask server stores accounts and
 wheels; the frontend is plain HTML/CSS/JS with no build step.
 
+## Screenshots
+
+A seeded holidays wheel, a spin result, customising the entries, and the
+admin panel — see the [`screenshots/`](screenshots/) folder for these
+full-size.
+
+| | |
+|:---:|:---:|
+| ![A seeded holidays wheel with trip-preference filters](screenshots/wheel.png) | ![A spin result showing the picked destination](screenshots/result.png) |
+| **The wheel** — filters, flags and favourites | **A spin result** — tags, notes and planning links |
+| ![Managing and customising the wheel's entries](screenshots/manage.png) | ![The admin panel with registration controls](screenshots/admin.png) |
+| **Manage the wheel** — add & tag your own | **Admin** — accounts, registration & invites |
+
 ## Features
 
 - **Accounts** 👤 — registering takes ten seconds: a name and a password,
