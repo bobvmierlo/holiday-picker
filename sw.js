@@ -35,10 +35,12 @@ self.addEventListener('push', (event) => {
   event.waitUntil(self.registration.showNotification(data.title || '🎡 Wheel of Choice', options));
 });
 
-// Tapping the notification focuses the app if it's open, otherwise
-// opens it on the wheel the notification came from (the /#wheel-id url).
-// The 'add to calendar' action instead goes straight to Google Calendar
-// with the dinner pre-filled.
+// Tapping the notification focuses the app if it's open, otherwise opens
+// it at the notification's url. That url can deep-link a locked dinner
+// (/?dinner=<id>#<wheel-id>) so the app lands on its calendar buttons —
+// this is the iOS path, where PWAs get no action buttons, only a body tap.
+// The 'add to calendar' action (Android/desktop, where actions render)
+// instead goes straight to Google Calendar with the dinner pre-filled.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const data = event.notification.data || {};
@@ -49,7 +51,12 @@ self.addEventListener('notificationclick', (event) => {
   const url = data.url || '/';
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    if (windows.length) return windows[0].focus();
+    if (windows.length) {
+      // focus() alone won't navigate an already-open app, so hand it the
+      // target and let the page act on it (switch wheel, open the dinner)
+      windows[0].postMessage({ type: 'wheel-nav', url });
+      return windows[0].focus();
+    }
     return self.clients.openWindow(url);
   })());
 });
