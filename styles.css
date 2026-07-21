@@ -888,6 +888,7 @@ body {
   gap: 0.5rem;
   margin-top: 0.8rem;
 }
+.pwa-toast-error { color: var(--accent); font-size: 0.82rem; margin: 0.6rem 0 0; }
 
 @media (prefers-reduced-motion: reduce) {
   *,
