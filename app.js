@@ -31,9 +31,15 @@ import { prefersReducedMotion, prettyDate, fmtHour, formatDateTime } from './uti
   const accountInvite = urlParams.has('invite') && !urlParams.has('join');
   let inviteCode = (urlParams.get('join') || urlParams.get('invite') || '')
     .toUpperCase().replace(/\s+/g, '');
-  if (urlParams.has('join') || urlParams.has('invite')) {
+  // ?dinner=<entry-id> — a date-locked push tapped on the body (iOS has no
+  // notification action buttons for PWAs, so the tap deep-links here). The
+  // wheel comes from the hash; once its data loads we pop the info modal on
+  // that entry so its calendar buttons are one tap away. See maybeOpenDinner.
+  let pendingDinnerId = urlParams.get('dinner') || '';
+  if (urlParams.has('join') || urlParams.has('invite') || urlParams.has('dinner')) {
     urlParams.delete('join');
     urlParams.delete('invite');
+    urlParams.delete('dinner');
     const qs = urlParams.toString();
     history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : '') + location.hash);
   }
@@ -160,6 +166,18 @@ import { prefersReducedMotion, prettyDate, fmtHour, formatDateTime } from './uti
     renderHistory();
     renderPending();
     refresh();
+    maybeOpenDinner();
+  }
+
+  // A date-locked notification was tapped: once we're on the right wheel
+  // with its history loaded, open that entry's info modal so its "add to
+  // calendar" buttons are right there. No-op until both line up.
+  function maybeOpenDinner() {
+    if (!pendingDinnerId) return;
+    const entry = state.history.find((e) => e.id === pendingDinnerId);
+    if (!entry) return;  // wrong wheel loaded, or the entry's gone — give up quietly
+    pendingDinnerId = '';
+    openDestInfo(entry);
   }
 
   function eligibleDestinations() {
@@ -842,6 +860,30 @@ import { prefersReducedMotion, prettyDate, fmtHour, formatDateTime } from './uti
     // the worker only handles push — it never intercepts requests, so
     // the app keeps loading fresh from the server
     navigator.serviceWorker.register('sw.js').catch(console.error);
+    // When the app is already open, tapping a notification only focuses it
+    // (no navigation), so the worker forwards the target here to act on.
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      const msg = event.data || {};
+      if (msg.type !== 'wheel-nav' || !msg.url) return;
+      navigateToDeepLink(msg.url);
+    });
+  }
+
+  // Land on the wheel (and dinner) a notification points at, from a URL
+  // like "/?dinner=<id>#<wheel-id>" — used both on cold start and when the
+  // running app is refocused by a notification tap.
+  function navigateToDeepLink(rawUrl) {
+    let target;
+    try { target = new URL(rawUrl, location.origin); } catch { return; }
+    const wheel = target.hash.replace(/^#/, '');
+    const dinner = new URLSearchParams(target.search).get('dinner');
+    if (dinner) pendingDinnerId = dinner;
+    if (!me) return;  // not signed in yet — init will read the params instead
+    if (wheel && wheel !== wheelId && me.wheels.some((w) => w.id === wheel)) {
+      switchWheel(wheel);  // reloads that wheel's data, then maybeOpenDinner fires
+    } else {
+      maybeOpenDinner();   // already on the right wheel; open straight away
+    }
   }
 
   function urlBase64ToUint8Array(base64) {
@@ -2824,12 +2866,26 @@ import { prefersReducedMotion, prettyDate, fmtHour, formatDateTime } from './uti
     }
     for (const item of state.history) {
       const li = document.createElement('li');
+      const main = document.createElement('div');
+      main.className = 'history-main';
       const name = document.createElement('button');
       name.type = 'button';
       name.className = 'history-name';
       name.title = 'Info & links for this pick';
       name.textContent = `${item.flag} ${item.name}`;
       name.addEventListener('click', () => openDestInfo(item));
+      main.append(name);
+      // Restaurant picks settle a date via a poll; surface where it's at
+      // right in the history so it reads at a glance — no notification needed.
+      const chip = !isTravelWheel() ? pollStatusChip(item) : null;
+      if (chip) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = `history-status ${chip.cls}`;
+        b.textContent = chip.text;
+        b.addEventListener('click', chip.act);
+        main.append(b);
+      }
       const when = document.createElement('span');
       when.className = 'when';
       const badge = item.status === 'booked' ? '📅 ' : (item.status === 'visited' ? '✅ ' : '');
@@ -2840,9 +2896,37 @@ import { prefersReducedMotion, prettyDate, fmtHour, formatDateTime } from './uti
       if (item.status === 'visited') titleBits.push('been there');
       if (item.trip_date) titleBits.push(`trip: ${item.trip_date}`);
       if (titleBits.length) when.title = titleBits.join(' · ');
-      li.append(name, when);
+      li.append(main, when);
       historyList.append(li);
     }
+  }
+
+  // A restaurant history entry's date-poll state as a tappable chip:
+  // {text, cls, act}. Keeps the "you still owe a vote" and "it's a date"
+  // states visible for members who don't have notifications on.
+  function pollStatusChip(item) {
+    const poll = item.poll;
+    if (!poll) {
+      return { text: '📅 No date yet — start a poll', cls: 'todo',
+        act: () => openPollModal(item, 'propose') };
+    }
+    if (poll.status === 'locked') {
+      return { text: `🗓️ ${prettyDate(poll.locked_date)} — it's a date`, cls: 'locked',
+        act: () => openDestInfo(item) };
+    }
+    if (!Array.isArray(poll.my_dates)) {  // this member hasn't voted yet
+      return { text: '🗳️ Vote on a date', cls: 'vote',
+        act: () => openPollModal(item, 'vote') };
+    }
+    if (poll.unanimous && poll.unanimous.length && !poll.waiting_names.length) {
+      return { text: '✅ Everyone\'s free — lock a date in', cls: 'vote',
+        act: () => openPollModal(item, 'vote') };
+    }
+    const waiting = poll.waiting_names.length
+      ? `waiting for ${poll.waiting_names.join(' & ')}`
+      : 'no evening works for all yet';
+    return { text: `🗳️ Poll open — ${waiting}`, cls: 'waiting',
+      act: () => openPollModal(item, 'vote') };
   }
 
   clearHistoryBtn.addEventListener('click', async () => {

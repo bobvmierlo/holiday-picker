@@ -849,7 +849,7 @@ def store_subscription(db, user, sub):
     user["push_subs"] = subs[-MAX_PUSH_SUBS:]
 
 
-def push_to_users(users, title, body, wheel, tag=None, gcal_url=None):
+def push_to_users(users, title, body, wheel, tag=None, gcal_url=None, url=None):
     """Queue one notification to every device of `users`. Delivery runs
     on a background thread: a round-trip to Apple's or Google's relay
     can take seconds, and the member who spun is still waiting for
@@ -872,7 +872,7 @@ def push_to_users(users, title, body, wheel, tag=None, gcal_url=None):
         "title": title,
         "body": body,
         "tag": tag or wheel["id"],
-        "url": f"/#{wheel['id']}",
+        "url": url or f"/#{wheel['id']}",
     }
     if gcal_url:
         data["gcal_url"] = gcal_url
@@ -2496,6 +2496,9 @@ def lock_poll(wheel_id, entry_id):
             wheel,
             tag=f"{wheel['id']}-poll-{entry_id}",
             gcal_url=dinner_gcal_url(entry["name"], (dest or {}).get("location", ""), date_str),
+            # body tap (the only actionable path on iOS PWAs) deep-links the
+            # app to this dinner's calendar buttons
+            url=f"/?dinner={quote(entry_id)}#{wheel['id']}",
         )
         return jsonify({"history": history_view(db, wheel, user)})
 
