@@ -2866,12 +2866,26 @@ import { prefersReducedMotion, prettyDate, fmtHour, formatDateTime } from './uti
     }
     for (const item of state.history) {
       const li = document.createElement('li');
+      const main = document.createElement('div');
+      main.className = 'history-main';
       const name = document.createElement('button');
       name.type = 'button';
       name.className = 'history-name';
       name.title = 'Info & links for this pick';
       name.textContent = `${item.flag} ${item.name}`;
       name.addEventListener('click', () => openDestInfo(item));
+      main.append(name);
+      // Restaurant picks settle a date via a poll; surface where it's at
+      // right in the history so it reads at a glance — no notification needed.
+      const chip = !isTravelWheel() ? pollStatusChip(item) : null;
+      if (chip) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = `history-status ${chip.cls}`;
+        b.textContent = chip.text;
+        b.addEventListener('click', chip.act);
+        main.append(b);
+      }
       const when = document.createElement('span');
       when.className = 'when';
       const badge = item.status === 'booked' ? '📅 ' : (item.status === 'visited' ? '✅ ' : '');
@@ -2882,9 +2896,37 @@ import { prefersReducedMotion, prettyDate, fmtHour, formatDateTime } from './uti
       if (item.status === 'visited') titleBits.push('been there');
       if (item.trip_date) titleBits.push(`trip: ${item.trip_date}`);
       if (titleBits.length) when.title = titleBits.join(' · ');
-      li.append(name, when);
+      li.append(main, when);
       historyList.append(li);
     }
+  }
+
+  // A restaurant history entry's date-poll state as a tappable chip:
+  // {text, cls, act}. Keeps the "you still owe a vote" and "it's a date"
+  // states visible for members who don't have notifications on.
+  function pollStatusChip(item) {
+    const poll = item.poll;
+    if (!poll) {
+      return { text: '📅 No date yet — start a poll', cls: 'todo',
+        act: () => openPollModal(item, 'propose') };
+    }
+    if (poll.status === 'locked') {
+      return { text: `🗓️ ${prettyDate(poll.locked_date)} — it's a date`, cls: 'locked',
+        act: () => openDestInfo(item) };
+    }
+    if (!Array.isArray(poll.my_dates)) {  // this member hasn't voted yet
+      return { text: '🗳️ Vote on a date', cls: 'vote',
+        act: () => openPollModal(item, 'vote') };
+    }
+    if (poll.unanimous && poll.unanimous.length && !poll.waiting_names.length) {
+      return { text: '✅ Everyone\'s free — lock a date in', cls: 'vote',
+        act: () => openPollModal(item, 'vote') };
+    }
+    const waiting = poll.waiting_names.length
+      ? `waiting for ${poll.waiting_names.join(' & ')}`
+      : 'no evening works for all yet';
+    return { text: `🗳️ Poll open — ${waiting}`, cls: 'waiting',
+      act: () => openPollModal(item, 'vote') };
   }
 
   clearHistoryBtn.addEventListener('click', async () => {
