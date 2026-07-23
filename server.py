@@ -2835,4 +2835,10 @@ def assets(filename):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
+    # HOST/PORT default to the same 0.0.0.0:8000 as before; overriding them
+    # via the environment is what lets the container (and reverse proxies)
+    # place the app wherever they like without editing this file.
+    app.run(
+        host=os.environ.get("HOST", "0.0.0.0"),
+        port=int(os.environ.get("PORT", "8000")),
+    )

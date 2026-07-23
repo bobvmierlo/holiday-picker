@@ -165,6 +165,48 @@ pip install pytest
 python3 -m pytest
 ```
 
+## 🐳 Running with Docker
+
+Prefer a container? The repo ships a [`Dockerfile`](Dockerfile) and a
+[`docker-compose.yml`](docker-compose.yml), so the whole app — Flask,
+push notifications and calendar support included — comes up with one
+command:
+
+```bash
+docker compose up -d
+# then open http://<host>:8000
+```
+
+That builds the image locally, starts it in the background, and stores
+all your accounts, wheels and history in a named `wheel-data` volume so
+they survive `docker compose down`, rebuilds and upgrades. To update,
+`git pull` and `docker compose up -d --build`. Plain Docker works too:
+
+```bash
+docker build -t wheel-of-choice .
+docker run -d -p 8000:8000 -v wheel-data:/data wheel-of-choice
+```
+
+Set any of the [environment knobs](docker-compose.yml) (`VAPID_SUBJECT`
+for push, `WHEEL_TZ` …) with `-e` or the compose `environment:` block,
+and change the published port with the usual `-p 9000:8000`.
+
+**Prebuilt image**: tagging a release (`git tag v3.4.0 && git push
+--tags`) runs [`.github/workflows/docker.yml`](.github/workflows/docker.yml),
+which publishes a multi-arch image (amd64 **and** arm64, so it runs on a
+Raspberry Pi) to the GitHub Container Registry. Once that's run once,
+skip the build entirely:
+
+```bash
+docker run -d -p 8000:8000 -v wheel-data:/data \
+  ghcr.io/bobvmierlo/wheel-of-choice:latest
+```
+
+The app still speaks plain HTTP — put it on your home network or behind
+a TLS reverse proxy, not naked on the open internet. Note the in-app
+"Update & restart server" button is for the systemd install below; in a
+container, update by pulling a newer image instead.
+
 ## Deploying to a Linux server
 
 The repo ships with a tiny [Flask](https://flask.palletsprojects.com)
@@ -225,8 +267,9 @@ watches and acts on as root.) The panel also checks the git remote in the
 background and flags — with a 🆕 dot on the **🛠️ Admin** button and a note
 in the Server section — when a newer commit is waiting to be pulled.
 
-**Changing the port**: edit the last line of `server.py`, then
-`sudo systemctl restart wheel-of-choice`.
+**Changing the port**: set `PORT` (and, if needed, `HOST`) in the
+environment — add `Environment=PORT=9000` to the unit file, or pass
+`-e PORT=9000` to Docker — then restart. No code edit required.
 
 The service stores accounts, wheels and history in
 `/var/lib/wheel-of-choice/db.json` (via systemd's `StateDirectory`), so

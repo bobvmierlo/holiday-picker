@@ -1,0 +1,28 @@
+# Wheel of Choice — one-command deploy.
+#
+#   docker compose up -d        # build & start in the background
+#   docker compose logs -f      # watch it
+#   docker compose down         # stop (your data stays in the volume)
+#
+# Then open http://<host>:8000
+services:
+  wheel-of-choice:
+    build: .
+    # Prefer a prebuilt image over building locally? Comment out `build:`
+    # above and uncomment this (published on tagged releases):
+    # image: ghcr.io/bobvmierlo/wheel-of-choice:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - wheel-data:/data
+    restart: unless-stopped
+    # environment:
+    #   # Push notifications — set a real contact address (see README):
+    #   VAPID_SUBJECT: mailto:you@example.com
+    #   # Date-poll defaults (all also tunable live in 🛠️ Admin → Date polls):
+    #   WHEEL_TZ: Europe/Amsterdam
+    #   WHEEL_EVENING_FROM: "17"
+    #   WHEEL_POLL_HORIZON_DAYS: "60"
+
+volumes:
+  wheel-data:
